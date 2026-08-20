@@ -19,9 +19,9 @@ import (
 
 func effectFromPB(e turnstilev1.Effect) policy.Effect {
 	switch e {
-	case turnstilev1.Effect_EFFECT_ALLOW:
+	case turnstilev1.Effect_ALLOW:
 		return policy.Allow
-	case turnstilev1.Effect_EFFECT_DENY:
+	case turnstilev1.Effect_DENY:
 		return policy.Deny
 	default:
 		// EFFECT_UNSPECIFIED maps to the empty effect, which policy validation
@@ -33,9 +33,9 @@ func effectFromPB(e turnstilev1.Effect) policy.Effect {
 func effectToPB(e policy.Effect) turnstilev1.Effect {
 	switch e {
 	case policy.Allow:
-		return turnstilev1.Effect_EFFECT_ALLOW
+		return turnstilev1.Effect_ALLOW
 	case policy.Deny:
-		return turnstilev1.Effect_EFFECT_DENY
+		return turnstilev1.Effect_DENY
 	default:
 		return turnstilev1.Effect_EFFECT_UNSPECIFIED
 	}
@@ -118,6 +118,33 @@ func configToPB(c ratelimit.Config) *turnstilev1.RateLimitConfig {
 	return out
 }
 
+// perActionFromPB converts a key's wire rate-limit map (action → Limit) to the
+// internal PerActionLimits.
+func perActionFromPB(in map[string]*turnstilev1.Limit) ratelimit.PerActionLimits {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(ratelimit.PerActionLimits, len(in))
+	for action, l := range in {
+		if l != nil {
+			out[action] = *limitFromPB(l)
+		}
+	}
+	return out
+}
+
+func perActionToPB(in ratelimit.PerActionLimits) map[string]*turnstilev1.Limit {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]*turnstilev1.Limit, len(in))
+	for action, l := range in {
+		ll := l
+		out[action] = limitToPB(&ll)
+	}
+	return out
+}
+
 func globalFromPB(g *turnstilev1.RateLimits) ratelimit.Global {
 	if g == nil {
 		return ratelimit.Global{}
@@ -166,7 +193,7 @@ func keyToPB(k *store.APIKey) *turnstilev1.Key {
 		Name:           k.Name,
 		Note:           k.Note,
 		Statements:     statementsToPB(k.Statements),
-		RateLimits:     configToPB(k.RateLimits),
+		RateLimits:     perActionToPB(k.RateLimits),
 		Disabled:       k.Disabled,
 		OwnerNamespace: k.OwnerNamespace,
 		CreatedAt:      timeToPB(k.CreatedAt),

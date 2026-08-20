@@ -37,11 +37,13 @@ service Turnstile {
 
 // ---- Policy model ----
 
-// Effect is the outcome a matching statement applies.
+// Effect is the outcome a matching statement applies. The JSON/wire values are
+// "ALLOW" and "DENY" (EFFECT_UNSPECIFIED is the required proto3 zero value and is
+// never a valid statement effect).
 enum Effect {
   EFFECT_UNSPECIFIED = 0;
-  EFFECT_ALLOW = 1;
-  EFFECT_DENY = 2;
+  ALLOW = 1;
+  DENY = 2;
 }
 
 // Statement grants (allow) or blocks (deny) a set of actions on a set of
@@ -70,8 +72,10 @@ message Limit {
   int32 burst = 2;
 }
 
-// RateLimitConfig is an optional Default plus per-action overrides. Used for a
-// key's own overrides, the global per-key defaults, and the service-wide caps.
+// RateLimitConfig is an optional Default plus per-action overrides. Used only in
+// the global policy — for the per-key defaults and the service-wide caps. A
+// key's own limits are a plain action→Limit map (see Key.rate_limits), since a
+// key can only override specific actions, never set a blanket default.
 message RateLimitConfig {
   Limit default = 1;
   map<string, Limit> per_action = 2;
@@ -94,9 +98,14 @@ message Key {
   string name = 2;
   string note = 3;
   repeated Statement statements = 4;
-  RateLimitConfig rate_limits = 5;
+  map<string, Limit> rate_limits = 5; // per-action overrides: action -> limit
   bool disabled = 6;
-  string owner_namespace = 7; // management-convenience tag; not parsed for authz
+  // owner_namespace is an optional, free-form organizational label recording who
+  // "owns" this key (a team or service name). It is a management convenience
+  // only — used to filter ListKeys and group keys in the console — and is NEVER
+  // parsed for authorization. Isolation between projects comes from action/
+  // resource namespacing (see Statement), not from this field.
+  string owner_namespace = 7;
   google.protobuf.Timestamp created_at = 8;
   google.protobuf.Timestamp last_used_at = 9;
   google.protobuf.Timestamp expires_at = 10;
@@ -107,9 +116,9 @@ message CreateKeyRequest {
   string name = 1;
   string note = 2;
   repeated Statement statements = 3;
-  RateLimitConfig rate_limits = 4;
+  map<string, Limit> rate_limits = 4; // per-action overrides: action -> limit
   bool disabled = 5;
-  string owner_namespace = 6;
+  string owner_namespace = 6; // optional organizational label; not used for authz
   google.protobuf.Timestamp expires_at = 7;
 }
 
@@ -127,9 +136,9 @@ message GetKeyRequest {
 }
 
 // UpdateKeyRequest applies a partial update. Scalar fields use proto3 optional
-// (absent = leave unchanged). statements and rate_limits use message presence
-// (absent = leave unchanged; present = replace). Expiry has an explicit
-// clear_expiry to distinguish "remove expiry" from "leave unchanged".
+// (absent = leave unchanged). statements uses message presence (absent = leave
+// unchanged; present = replace). Expiry and rate_limits each have an explicit
+// clear_* flag to distinguish "remove" from "leave unchanged".
 message UpdateKeyRequest {
   string id = 1;
   optional string name = 2;
@@ -137,13 +146,13 @@ message UpdateKeyRequest {
   optional bool disabled = 4;
   optional string owner_namespace = 5;
   StatementList statements = 6; // absent = leave unchanged; present = replace
-  // rate_limits: absent = leave unchanged; present = replace wholesale. Note an
-  // empty message ({}) is "present" and replaces the key's overrides with none
-  // (so the key falls back to the global per-key defaults) — it does NOT mean
-  // "leave unchanged".
-  RateLimitConfig rate_limits = 7;
+  // rate_limits (per-action overrides: action -> limit) replaces the key's
+  // overrides when non-empty. A map field carries no presence, so an empty or
+  // omitted map means "leave unchanged"; use clear_rate_limits to remove all.
+  map<string, Limit> rate_limits = 7;
   google.protobuf.Timestamp expires_at = 8; // present = set expiry to this
   bool clear_expiry = 9; // true = remove any expiry (exclusive with expires_at)
+  bool clear_rate_limits = 10; // true = remove all overrides (exclusive with rate_limits)
 }
 
 message DeleteKeyRequest {

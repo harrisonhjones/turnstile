@@ -95,7 +95,7 @@ func TestServiceEndToEnd(t *testing.T) {
 	// --- CreateKey returns a plaintext token once ---
 	createReq := connect.NewRequest(&turnstilev1.CreateKeyRequest{
 		Name:       "reader",
-		Statements: []*turnstilev1.Statement{{Effect: turnstilev1.Effect_EFFECT_ALLOW, Actions: []string{"svc:read"}, Resources: []string{"svc:*"}}},
+		Statements: []*turnstilev1.Statement{{Effect: turnstilev1.Effect_ALLOW, Actions: []string{"svc:read"}, Resources: []string{"svc:*"}}},
 	})
 	withAdmin(env, createReq)
 	created, err := env.client.CreateKey(ctx, createReq)
@@ -214,10 +214,8 @@ func TestRateLimitDoesNotBurnOnDeny(t *testing.T) {
 	// A key with a strict per-action rate limit (1/min, burst 1) on svc:read.
 	createReq := connect.NewRequest(&turnstilev1.CreateKeyRequest{
 		Name:       "limited",
-		Statements: []*turnstilev1.Statement{{Effect: turnstilev1.Effect_EFFECT_ALLOW, Actions: []string{"svc:read"}, Resources: []string{"svc:*"}}},
-		RateLimits: &turnstilev1.RateLimitConfig{
-			PerAction: map[string]*turnstilev1.Limit{"svc:read": {PerMinute: 60, Burst: 1}},
-		},
+		Statements: []*turnstilev1.Statement{{Effect: turnstilev1.Effect_ALLOW, Actions: []string{"svc:read"}, Resources: []string{"svc:*"}}},
+		RateLimits: map[string]*turnstilev1.Limit{"svc:read": {PerMinute: 60, Burst: 1}},
 	})
 	withAdmin(env, createReq)
 	created, err := env.client.CreateKey(ctx, createReq)
@@ -277,7 +275,7 @@ func TestUpdatePolicyVersionConflict(t *testing.T) {
 
 	// A global allow is rejected (deny-only ceiling).
 	badReq := connect.NewRequest(&turnstilev1.UpdatePolicyRequest{
-		Statements:      []*turnstilev1.Statement{{Effect: turnstilev1.Effect_EFFECT_ALLOW, Actions: []string{"*"}, Resources: []string{"*"}}},
+		Statements:      []*turnstilev1.Statement{{Effect: turnstilev1.Effect_ALLOW, Actions: []string{"*"}, Resources: []string{"*"}}},
 		ExpectedVersion: version,
 	})
 	withAdmin(env, badReq)
@@ -287,7 +285,7 @@ func TestUpdatePolicyVersionConflict(t *testing.T) {
 
 	// A valid deny update with the right version succeeds.
 	okReq := connect.NewRequest(&turnstilev1.UpdatePolicyRequest{
-		Statements:      []*turnstilev1.Statement{{Effect: turnstilev1.Effect_EFFECT_DENY, Actions: []string{"svc:danger"}, Resources: []string{"*"}}},
+		Statements:      []*turnstilev1.Statement{{Effect: turnstilev1.Effect_DENY, Actions: []string{"svc:danger"}, Resources: []string{"*"}}},
 		ExpectedVersion: version,
 	})
 	withAdmin(env, okReq)
@@ -301,7 +299,7 @@ func TestUpdatePolicyVersionConflict(t *testing.T) {
 
 	// Reusing the stale version is aborted.
 	staleReq := connect.NewRequest(&turnstilev1.UpdatePolicyRequest{
-		Statements:      []*turnstilev1.Statement{{Effect: turnstilev1.Effect_EFFECT_DENY, Actions: []string{"svc:other"}, Resources: []string{"*"}}},
+		Statements:      []*turnstilev1.Statement{{Effect: turnstilev1.Effect_DENY, Actions: []string{"svc:other"}, Resources: []string{"*"}}},
 		ExpectedVersion: version,
 	})
 	withAdmin(env, staleReq)
@@ -311,7 +309,7 @@ func TestUpdatePolicyVersionConflict(t *testing.T) {
 }
 
 func allowAll() []*turnstilev1.Statement {
-	return []*turnstilev1.Statement{{Effect: turnstilev1.Effect_EFFECT_ALLOW, Actions: []string{"*"}, Resources: []string{"*"}}}
+	return []*turnstilev1.Statement{{Effect: turnstilev1.Effect_ALLOW, Actions: []string{"*"}, Resources: []string{"*"}}}
 }
 
 // mustCreateKey creates a key as admin and returns it (including plaintextToken).
@@ -381,7 +379,7 @@ func TestCheckWritesNoAudit(t *testing.T) {
 	env := newTestEnv(t)
 	ctx := context.Background()
 	key := mustCreateKey(t, env, &turnstilev1.CreateKeyRequest{
-		Name: "k", Statements: []*turnstilev1.Statement{{Effect: turnstilev1.Effect_EFFECT_ALLOW, Actions: []string{"svc:read"}, Resources: []string{"svc:*"}}},
+		Name: "k", Statements: []*turnstilev1.Statement{{Effect: turnstilev1.Effect_ALLOW, Actions: []string{"svc:read"}, Resources: []string{"svc:*"}}},
 	})
 
 	for i := 0; i < 5; i++ {
@@ -445,7 +443,7 @@ func TestGlobalDenyCeilingOverWire(t *testing.T) {
 	ctx := context.Background()
 
 	key := mustCreateKey(t, env, &turnstilev1.CreateKeyRequest{
-		Name: "broad", Statements: []*turnstilev1.Statement{{Effect: turnstilev1.Effect_EFFECT_ALLOW, Actions: []string{"svc:*"}, Resources: []string{"*"}}},
+		Name: "broad", Statements: []*turnstilev1.Statement{{Effect: turnstilev1.Effect_ALLOW, Actions: []string{"svc:*"}, Resources: []string{"*"}}},
 	})
 
 	// Read the current version, then add a global deny for svc:danger.
@@ -456,7 +454,7 @@ func TestGlobalDenyCeilingOverWire(t *testing.T) {
 		t.Fatalf("GetPolicy: %v", err)
 	}
 	upReq := connect.NewRequest(&turnstilev1.UpdatePolicyRequest{
-		Statements:      []*turnstilev1.Statement{{Effect: turnstilev1.Effect_EFFECT_DENY, Actions: []string{"svc:danger"}, Resources: []string{"*"}}},
+		Statements:      []*turnstilev1.Statement{{Effect: turnstilev1.Effect_DENY, Actions: []string{"svc:danger"}, Resources: []string{"*"}}},
 		RateLimits:      pol.Msg.RateLimits,
 		ExpectedVersion: pol.Msg.Version,
 	})
@@ -490,7 +488,7 @@ func TestUpdateKeySemantics(t *testing.T) {
 	future := timestamppb.New(time.Now().Add(24 * time.Hour))
 	key := mustCreateKey(t, env, &turnstilev1.CreateKeyRequest{
 		Name: "orig", Note: "n1", ExpiresAt: future,
-		Statements: []*turnstilev1.Statement{{Effect: turnstilev1.Effect_EFFECT_ALLOW, Actions: []string{"svc:read"}, Resources: []string{"svc:*"}}},
+		Statements: []*turnstilev1.Statement{{Effect: turnstilev1.Effect_ALLOW, Actions: []string{"svc:read"}, Resources: []string{"svc:*"}}},
 	})
 
 	update := func(r *turnstilev1.UpdateKeyRequest) (*turnstilev1.Key, error) {
@@ -522,7 +520,7 @@ func TestUpdateKeySemantics(t *testing.T) {
 	// Replace statements.
 	got, err = update(&turnstilev1.UpdateKeyRequest{
 		Statements: &turnstilev1.StatementList{Statements: []*turnstilev1.Statement{
-			{Effect: turnstilev1.Effect_EFFECT_ALLOW, Actions: []string{"svc:write"}, Resources: []string{"svc:*"}},
+			{Effect: turnstilev1.Effect_ALLOW, Actions: []string{"svc:write"}, Resources: []string{"svc:*"}},
 		}},
 	})
 	if err != nil {
@@ -540,6 +538,34 @@ func TestUpdateKeySemantics(t *testing.T) {
 	if got.ExpiresAt != nil {
 		t.Errorf("expiry should be cleared, got %v", got.ExpiresAt)
 	}
+
+	// Set per-action rate-limit overrides (a bare action→limit map).
+	got, err = update(&turnstilev1.UpdateKeyRequest{
+		RateLimits: map[string]*turnstilev1.Limit{"svc:write": {PerMinute: 30}},
+	})
+	if err != nil {
+		t.Fatalf("set rate limits: %v", err)
+	}
+	if l, ok := got.RateLimits["svc:write"]; !ok || l.PerMinute != 30 {
+		t.Errorf("rate limit override not applied: %+v", got.RateLimits)
+	}
+
+	// rate_limits + clear_rate_limits together is rejected.
+	if _, err := update(&turnstilev1.UpdateKeyRequest{
+		RateLimits:      map[string]*turnstilev1.Limit{"svc:write": {PerMinute: 10}},
+		ClearRateLimits: true,
+	}); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Errorf("rate_limits + clear_rate_limits should be InvalidArgument, got %v", connect.CodeOf(err))
+	}
+
+	// Clear the rate-limit overrides.
+	got, err = update(&turnstilev1.UpdateKeyRequest{ClearRateLimits: true})
+	if err != nil {
+		t.Fatalf("clear rate limits: %v", err)
+	}
+	if len(got.RateLimits) != 0 {
+		t.Errorf("rate limits should be cleared, got %+v", got.RateLimits)
+	}
 }
 
 // TestConcurrentCheckAndPolicyUpdate races many Check reads against repeated
@@ -549,7 +575,7 @@ func TestConcurrentCheckAndPolicyUpdate(t *testing.T) {
 	env := newTestEnv(t)
 	ctx := context.Background()
 	key := mustCreateKey(t, env, &turnstilev1.CreateKeyRequest{
-		Name: "broad", Statements: []*turnstilev1.Statement{{Effect: turnstilev1.Effect_EFFECT_ALLOW, Actions: []string{"svc:*"}, Resources: []string{"*"}}},
+		Name: "broad", Statements: []*turnstilev1.Statement{{Effect: turnstilev1.Effect_ALLOW, Actions: []string{"svc:*"}, Resources: []string{"*"}}},
 	})
 
 	var wg sync.WaitGroup
@@ -581,7 +607,7 @@ func TestConcurrentCheckAndPolicyUpdate(t *testing.T) {
 				return
 			}
 			upReq := connect.NewRequest(&turnstilev1.UpdatePolicyRequest{
-				Statements:      []*turnstilev1.Statement{{Effect: turnstilev1.Effect_EFFECT_DENY, Actions: []string{"svc:danger"}, Resources: []string{"*"}}},
+				Statements:      []*turnstilev1.Statement{{Effect: turnstilev1.Effect_DENY, Actions: []string{"svc:danger"}, Resources: []string{"*"}}},
 				RateLimits:      pol.Msg.RateLimits,
 				ExpectedVersion: pol.Msg.Version,
 			})

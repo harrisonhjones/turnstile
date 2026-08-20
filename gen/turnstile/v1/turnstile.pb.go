@@ -23,26 +23,28 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// Effect is the outcome a matching statement applies.
+// Effect is the outcome a matching statement applies. The JSON/wire values are
+// "ALLOW" and "DENY" (EFFECT_UNSPECIFIED is the required proto3 zero value and is
+// never a valid statement effect).
 type Effect int32
 
 const (
 	Effect_EFFECT_UNSPECIFIED Effect = 0
-	Effect_EFFECT_ALLOW       Effect = 1
-	Effect_EFFECT_DENY        Effect = 2
+	Effect_ALLOW              Effect = 1
+	Effect_DENY               Effect = 2
 )
 
 // Enum value maps for Effect.
 var (
 	Effect_name = map[int32]string{
 		0: "EFFECT_UNSPECIFIED",
-		1: "EFFECT_ALLOW",
-		2: "EFFECT_DENY",
+		1: "ALLOW",
+		2: "DENY",
 	}
 	Effect_value = map[string]int32{
 		"EFFECT_UNSPECIFIED": 0,
-		"EFFECT_ALLOW":       1,
-		"EFFECT_DENY":        2,
+		"ALLOW":              1,
+		"DENY":               2,
 	}
 )
 
@@ -297,8 +299,10 @@ func (x *Limit) GetBurst() int32 {
 	return 0
 }
 
-// RateLimitConfig is an optional Default plus per-action overrides. Used for a
-// key's own overrides, the global per-key defaults, and the service-wide caps.
+// RateLimitConfig is an optional Default plus per-action overrides. Used only in
+// the global policy — for the per-key defaults and the service-wide caps. A
+// key's own limits are a plain action→Limit map (see Key.rate_limits), since a
+// key can only override specific actions, never set a blanket default.
 type RateLimitConfig struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Default       *Limit                 `protobuf:"bytes,1,opt,name=default,proto3" json:"default,omitempty"`
@@ -409,14 +413,19 @@ func (x *RateLimits) GetServiceWide() *RateLimitConfig {
 // SHA-256 hash. plaintext_token is populated ONLY in the CreateKey response and
 // is shown to the operator exactly once.
 type Key struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	Id             string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Name           string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Note           string                 `protobuf:"bytes,3,opt,name=note,proto3" json:"note,omitempty"`
-	Statements     []*Statement           `protobuf:"bytes,4,rep,name=statements,proto3" json:"statements,omitempty"`
-	RateLimits     *RateLimitConfig       `protobuf:"bytes,5,opt,name=rate_limits,json=rateLimits,proto3" json:"rate_limits,omitempty"`
-	Disabled       bool                   `protobuf:"varint,6,opt,name=disabled,proto3" json:"disabled,omitempty"`
-	OwnerNamespace string                 `protobuf:"bytes,7,opt,name=owner_namespace,json=ownerNamespace,proto3" json:"owner_namespace,omitempty"` // management-convenience tag; not parsed for authz
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Id         string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name       string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Note       string                 `protobuf:"bytes,3,opt,name=note,proto3" json:"note,omitempty"`
+	Statements []*Statement           `protobuf:"bytes,4,rep,name=statements,proto3" json:"statements,omitempty"`
+	RateLimits map[string]*Limit      `protobuf:"bytes,5,rep,name=rate_limits,json=rateLimits,proto3" json:"rate_limits,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // per-action overrides: action -> limit
+	Disabled   bool                   `protobuf:"varint,6,opt,name=disabled,proto3" json:"disabled,omitempty"`
+	// owner_namespace is an optional, free-form organizational label recording who
+	// "owns" this key (a team or service name). It is a management convenience
+	// only — used to filter ListKeys and group keys in the console — and is NEVER
+	// parsed for authorization. Isolation between projects comes from action/
+	// resource namespacing (see Statement), not from this field.
+	OwnerNamespace string                 `protobuf:"bytes,7,opt,name=owner_namespace,json=ownerNamespace,proto3" json:"owner_namespace,omitempty"`
 	CreatedAt      *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	LastUsedAt     *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=last_used_at,json=lastUsedAt,proto3" json:"last_used_at,omitempty"`
 	ExpiresAt      *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
@@ -483,7 +492,7 @@ func (x *Key) GetStatements() []*Statement {
 	return nil
 }
 
-func (x *Key) GetRateLimits() *RateLimitConfig {
+func (x *Key) GetRateLimits() map[string]*Limit {
 	if x != nil {
 		return x.RateLimits
 	}
@@ -537,9 +546,9 @@ type CreateKeyRequest struct {
 	Name           string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	Note           string                 `protobuf:"bytes,2,opt,name=note,proto3" json:"note,omitempty"`
 	Statements     []*Statement           `protobuf:"bytes,3,rep,name=statements,proto3" json:"statements,omitempty"`
-	RateLimits     *RateLimitConfig       `protobuf:"bytes,4,opt,name=rate_limits,json=rateLimits,proto3" json:"rate_limits,omitempty"`
+	RateLimits     map[string]*Limit      `protobuf:"bytes,4,rep,name=rate_limits,json=rateLimits,proto3" json:"rate_limits,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // per-action overrides: action -> limit
 	Disabled       bool                   `protobuf:"varint,5,opt,name=disabled,proto3" json:"disabled,omitempty"`
-	OwnerNamespace string                 `protobuf:"bytes,6,opt,name=owner_namespace,json=ownerNamespace,proto3" json:"owner_namespace,omitempty"`
+	OwnerNamespace string                 `protobuf:"bytes,6,opt,name=owner_namespace,json=ownerNamespace,proto3" json:"owner_namespace,omitempty"` // optional organizational label; not used for authz
 	ExpiresAt      *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
@@ -596,7 +605,7 @@ func (x *CreateKeyRequest) GetStatements() []*Statement {
 	return nil
 }
 
-func (x *CreateKeyRequest) GetRateLimits() *RateLimitConfig {
+func (x *CreateKeyRequest) GetRateLimits() map[string]*Limit {
 	if x != nil {
 		return x.RateLimits
 	}
@@ -765,9 +774,9 @@ func (x *GetKeyRequest) GetId() string {
 }
 
 // UpdateKeyRequest applies a partial update. Scalar fields use proto3 optional
-// (absent = leave unchanged). statements and rate_limits use message presence
-// (absent = leave unchanged; present = replace). Expiry has an explicit
-// clear_expiry to distinguish "remove expiry" from "leave unchanged".
+// (absent = leave unchanged). statements uses message presence (absent = leave
+// unchanged; present = replace). Expiry and rate_limits each have an explicit
+// clear_* flag to distinguish "remove" from "leave unchanged".
 type UpdateKeyRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	Id             string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -776,15 +785,15 @@ type UpdateKeyRequest struct {
 	Disabled       *bool                  `protobuf:"varint,4,opt,name=disabled,proto3,oneof" json:"disabled,omitempty"`
 	OwnerNamespace *string                `protobuf:"bytes,5,opt,name=owner_namespace,json=ownerNamespace,proto3,oneof" json:"owner_namespace,omitempty"`
 	Statements     *StatementList         `protobuf:"bytes,6,opt,name=statements,proto3" json:"statements,omitempty"` // absent = leave unchanged; present = replace
-	// rate_limits: absent = leave unchanged; present = replace wholesale. Note an
-	// empty message ({}) is "present" and replaces the key's overrides with none
-	// (so the key falls back to the global per-key defaults) — it does NOT mean
-	// "leave unchanged".
-	RateLimits    *RateLimitConfig       `protobuf:"bytes,7,opt,name=rate_limits,json=rateLimits,proto3" json:"rate_limits,omitempty"`
-	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`        // present = set expiry to this
-	ClearExpiry   bool                   `protobuf:"varint,9,opt,name=clear_expiry,json=clearExpiry,proto3" json:"clear_expiry,omitempty"` // true = remove any expiry (exclusive with expires_at)
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// rate_limits (per-action overrides: action -> limit) replaces the key's
+	// overrides when non-empty. A map field carries no presence, so an empty or
+	// omitted map means "leave unchanged"; use clear_rate_limits to remove all.
+	RateLimits      map[string]*Limit      `protobuf:"bytes,7,rep,name=rate_limits,json=rateLimits,proto3" json:"rate_limits,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	ExpiresAt       *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`                       // present = set expiry to this
+	ClearExpiry     bool                   `protobuf:"varint,9,opt,name=clear_expiry,json=clearExpiry,proto3" json:"clear_expiry,omitempty"`                // true = remove any expiry (exclusive with expires_at)
+	ClearRateLimits bool                   `protobuf:"varint,10,opt,name=clear_rate_limits,json=clearRateLimits,proto3" json:"clear_rate_limits,omitempty"` // true = remove all overrides (exclusive with rate_limits)
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *UpdateKeyRequest) Reset() {
@@ -859,7 +868,7 @@ func (x *UpdateKeyRequest) GetStatements() *StatementList {
 	return nil
 }
 
-func (x *UpdateKeyRequest) GetRateLimits() *RateLimitConfig {
+func (x *UpdateKeyRequest) GetRateLimits() map[string]*Limit {
 	if x != nil {
 		return x.RateLimits
 	}
@@ -876,6 +885,13 @@ func (x *UpdateKeyRequest) GetExpiresAt() *timestamppb.Timestamp {
 func (x *UpdateKeyRequest) GetClearExpiry() bool {
 	if x != nil {
 		return x.ClearExpiry
+	}
+	return false
+}
+
+func (x *UpdateKeyRequest) GetClearRateLimits() bool {
+	if x != nil {
+		return x.ClearRateLimits
 	}
 	return false
 }
@@ -1757,15 +1773,15 @@ const file_turnstile_v1_turnstile_proto_rawDesc = "" +
 	"\n" +
 	"RateLimits\x126\n" +
 	"\aper_key\x18\x01 \x01(\v2\x1d.turnstile.v1.RateLimitConfigR\x06perKey\x12@\n" +
-	"\fservice_wide\x18\x02 \x01(\v2\x1d.turnstile.v1.RateLimitConfigR\vserviceWide\"\xd8\x03\n" +
+	"\fservice_wide\x18\x02 \x01(\v2\x1d.turnstile.v1.RateLimitConfigR\vserviceWide\"\xb0\x04\n" +
 	"\x03Key\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x12\n" +
 	"\x04note\x18\x03 \x01(\tR\x04note\x127\n" +
 	"\n" +
 	"statements\x18\x04 \x03(\v2\x17.turnstile.v1.StatementR\n" +
-	"statements\x12>\n" +
-	"\vrate_limits\x18\x05 \x01(\v2\x1d.turnstile.v1.RateLimitConfigR\n" +
+	"statements\x12B\n" +
+	"\vrate_limits\x18\x05 \x03(\v2!.turnstile.v1.Key.RateLimitsEntryR\n" +
 	"rateLimits\x12\x1a\n" +
 	"\bdisabled\x18\x06 \x01(\bR\bdisabled\x12'\n" +
 	"\x0fowner_namespace\x18\a \x01(\tR\x0eownerNamespace\x129\n" +
@@ -1776,26 +1792,32 @@ const file_turnstile_v1_turnstile_proto_rawDesc = "" +
 	"\n" +
 	"expires_at\x18\n" +
 	" \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12'\n" +
-	"\x0fplaintext_token\x18\v \x01(\tR\x0eplaintextToken\"\xb3\x02\n" +
+	"\x0fplaintext_token\x18\v \x01(\tR\x0eplaintextToken\x1aR\n" +
+	"\x0fRateLimitsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12)\n" +
+	"\x05value\x18\x02 \x01(\v2\x13.turnstile.v1.LimitR\x05value:\x028\x01\"\x98\x03\n" +
 	"\x10CreateKeyRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
 	"\x04note\x18\x02 \x01(\tR\x04note\x127\n" +
 	"\n" +
 	"statements\x18\x03 \x03(\v2\x17.turnstile.v1.StatementR\n" +
-	"statements\x12>\n" +
-	"\vrate_limits\x18\x04 \x01(\v2\x1d.turnstile.v1.RateLimitConfigR\n" +
+	"statements\x12O\n" +
+	"\vrate_limits\x18\x04 \x03(\v2..turnstile.v1.CreateKeyRequest.RateLimitsEntryR\n" +
 	"rateLimits\x12\x1a\n" +
 	"\bdisabled\x18\x05 \x01(\bR\bdisabled\x12'\n" +
 	"\x0fowner_namespace\x18\x06 \x01(\tR\x0eownerNamespace\x129\n" +
 	"\n" +
-	"expires_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"e\n" +
+	"expires_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x1aR\n" +
+	"\x0fRateLimitsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12)\n" +
+	"\x05value\x18\x02 \x01(\v2\x13.turnstile.v1.LimitR\x05value:\x028\x01\"e\n" +
 	"\x0fListKeysRequest\x12)\n" +
 	"\x10include_disabled\x18\x01 \x01(\bR\x0fincludeDisabled\x12'\n" +
 	"\x0fowner_namespace\x18\x02 \x01(\tR\x0eownerNamespace\"9\n" +
 	"\x10ListKeysResponse\x12%\n" +
 	"\x04keys\x18\x01 \x03(\v2\x11.turnstile.v1.KeyR\x04keys\"\x1f\n" +
 	"\rGetKeyRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\xb1\x03\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\xc2\x04\n" +
 	"\x10UpdateKeyRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
 	"\x04name\x18\x02 \x01(\tH\x00R\x04name\x88\x01\x01\x12\x17\n" +
@@ -1804,12 +1826,17 @@ const file_turnstile_v1_turnstile_proto_rawDesc = "" +
 	"\x0fowner_namespace\x18\x05 \x01(\tH\x03R\x0eownerNamespace\x88\x01\x01\x12;\n" +
 	"\n" +
 	"statements\x18\x06 \x01(\v2\x1b.turnstile.v1.StatementListR\n" +
-	"statements\x12>\n" +
-	"\vrate_limits\x18\a \x01(\v2\x1d.turnstile.v1.RateLimitConfigR\n" +
+	"statements\x12O\n" +
+	"\vrate_limits\x18\a \x03(\v2..turnstile.v1.UpdateKeyRequest.RateLimitsEntryR\n" +
 	"rateLimits\x129\n" +
 	"\n" +
 	"expires_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12!\n" +
-	"\fclear_expiry\x18\t \x01(\bR\vclearExpiryB\a\n" +
+	"\fclear_expiry\x18\t \x01(\bR\vclearExpiry\x12*\n" +
+	"\x11clear_rate_limits\x18\n" +
+	" \x01(\bR\x0fclearRateLimits\x1aR\n" +
+	"\x0fRateLimitsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12)\n" +
+	"\x05value\x18\x02 \x01(\v2\x13.turnstile.v1.LimitR\x05value:\x028\x01B\a\n" +
 	"\x05_nameB\a\n" +
 	"\x05_noteB\v\n" +
 	"\t_disabledB\x12\n" +
@@ -1888,11 +1915,11 @@ const file_turnstile_v1_turnstile_proto_rawDesc = "" +
 	"\x12QueryAuditResponse\x122\n" +
 	"\aentries\x18\x01 \x03(\v2\x18.turnstile.v1.AuditEntryR\aentries\x12\x1f\n" +
 	"\vnext_cursor\x18\x02 \x01(\x03R\n" +
-	"nextCursor*C\n" +
+	"nextCursor*5\n" +
 	"\x06Effect\x12\x16\n" +
-	"\x12EFFECT_UNSPECIFIED\x10\x00\x12\x10\n" +
-	"\fEFFECT_ALLOW\x10\x01\x12\x0f\n" +
-	"\vEFFECT_DENY\x10\x02*Q\n" +
+	"\x12EFFECT_UNSPECIFIED\x10\x00\x12\t\n" +
+	"\x05ALLOW\x10\x01\x12\b\n" +
+	"\x04DENY\x10\x02*Q\n" +
 	"\bDecision\x12\v\n" +
 	"\aALLOWED\x10\x00\x12\x13\n" +
 	"\x0fUNAUTHENTICATED\x10\x01\x12\x11\n" +
@@ -1925,7 +1952,7 @@ func file_turnstile_v1_turnstile_proto_rawDescGZIP() []byte {
 }
 
 var file_turnstile_v1_turnstile_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_turnstile_v1_turnstile_proto_msgTypes = make([]protoimpl.MessageInfo, 25)
+var file_turnstile_v1_turnstile_proto_msgTypes = make([]protoimpl.MessageInfo, 28)
 var file_turnstile_v1_turnstile_proto_goTypes = []any{
 	(Effect)(0),                   // 0: turnstile.v1.Effect
 	(Decision)(0),                 // 1: turnstile.v1.Decision
@@ -1954,8 +1981,11 @@ var file_turnstile_v1_turnstile_proto_goTypes = []any{
 	(*QueryAuditRequest)(nil),     // 24: turnstile.v1.QueryAuditRequest
 	(*QueryAuditResponse)(nil),    // 25: turnstile.v1.QueryAuditResponse
 	nil,                           // 26: turnstile.v1.RateLimitConfig.PerActionEntry
-	(*timestamppb.Timestamp)(nil), // 27: google.protobuf.Timestamp
-	(*emptypb.Empty)(nil),         // 28: google.protobuf.Empty
+	nil,                           // 27: turnstile.v1.Key.RateLimitsEntry
+	nil,                           // 28: turnstile.v1.CreateKeyRequest.RateLimitsEntry
+	nil,                           // 29: turnstile.v1.UpdateKeyRequest.RateLimitsEntry
+	(*timestamppb.Timestamp)(nil), // 30: google.protobuf.Timestamp
+	(*emptypb.Empty)(nil),         // 31: google.protobuf.Empty
 }
 var file_turnstile_v1_turnstile_proto_depIdxs = []int32{
 	0,  // 0: turnstile.v1.Statement.effect:type_name -> turnstile.v1.Effect
@@ -1965,57 +1995,60 @@ var file_turnstile_v1_turnstile_proto_depIdxs = []int32{
 	5,  // 4: turnstile.v1.RateLimits.per_key:type_name -> turnstile.v1.RateLimitConfig
 	5,  // 5: turnstile.v1.RateLimits.service_wide:type_name -> turnstile.v1.RateLimitConfig
 	2,  // 6: turnstile.v1.Key.statements:type_name -> turnstile.v1.Statement
-	5,  // 7: turnstile.v1.Key.rate_limits:type_name -> turnstile.v1.RateLimitConfig
-	27, // 8: turnstile.v1.Key.created_at:type_name -> google.protobuf.Timestamp
-	27, // 9: turnstile.v1.Key.last_used_at:type_name -> google.protobuf.Timestamp
-	27, // 10: turnstile.v1.Key.expires_at:type_name -> google.protobuf.Timestamp
+	27, // 7: turnstile.v1.Key.rate_limits:type_name -> turnstile.v1.Key.RateLimitsEntry
+	30, // 8: turnstile.v1.Key.created_at:type_name -> google.protobuf.Timestamp
+	30, // 9: turnstile.v1.Key.last_used_at:type_name -> google.protobuf.Timestamp
+	30, // 10: turnstile.v1.Key.expires_at:type_name -> google.protobuf.Timestamp
 	2,  // 11: turnstile.v1.CreateKeyRequest.statements:type_name -> turnstile.v1.Statement
-	5,  // 12: turnstile.v1.CreateKeyRequest.rate_limits:type_name -> turnstile.v1.RateLimitConfig
-	27, // 13: turnstile.v1.CreateKeyRequest.expires_at:type_name -> google.protobuf.Timestamp
+	28, // 12: turnstile.v1.CreateKeyRequest.rate_limits:type_name -> turnstile.v1.CreateKeyRequest.RateLimitsEntry
+	30, // 13: turnstile.v1.CreateKeyRequest.expires_at:type_name -> google.protobuf.Timestamp
 	7,  // 14: turnstile.v1.ListKeysResponse.keys:type_name -> turnstile.v1.Key
 	3,  // 15: turnstile.v1.UpdateKeyRequest.statements:type_name -> turnstile.v1.StatementList
-	5,  // 16: turnstile.v1.UpdateKeyRequest.rate_limits:type_name -> turnstile.v1.RateLimitConfig
-	27, // 17: turnstile.v1.UpdateKeyRequest.expires_at:type_name -> google.protobuf.Timestamp
+	29, // 16: turnstile.v1.UpdateKeyRequest.rate_limits:type_name -> turnstile.v1.UpdateKeyRequest.RateLimitsEntry
+	30, // 17: turnstile.v1.UpdateKeyRequest.expires_at:type_name -> google.protobuf.Timestamp
 	2,  // 18: turnstile.v1.Policy.statements:type_name -> turnstile.v1.Statement
 	6,  // 19: turnstile.v1.Policy.rate_limits:type_name -> turnstile.v1.RateLimits
-	27, // 20: turnstile.v1.Policy.updated_at:type_name -> google.protobuf.Timestamp
+	30, // 20: turnstile.v1.Policy.updated_at:type_name -> google.protobuf.Timestamp
 	2,  // 21: turnstile.v1.UpdatePolicyRequest.statements:type_name -> turnstile.v1.Statement
 	6,  // 22: turnstile.v1.UpdatePolicyRequest.rate_limits:type_name -> turnstile.v1.RateLimits
 	20, // 23: turnstile.v1.CheckResponse.principal:type_name -> turnstile.v1.Principal
 	1,  // 24: turnstile.v1.CheckResponse.decision:type_name -> turnstile.v1.Decision
 	19, // 25: turnstile.v1.CheckResponse.rate_limit:type_name -> turnstile.v1.RateLimitVerdict
-	27, // 26: turnstile.v1.AuditEntry.timestamp:type_name -> google.protobuf.Timestamp
-	27, // 27: turnstile.v1.QueryAuditRequest.after:type_name -> google.protobuf.Timestamp
-	27, // 28: turnstile.v1.QueryAuditRequest.before:type_name -> google.protobuf.Timestamp
+	30, // 26: turnstile.v1.AuditEntry.timestamp:type_name -> google.protobuf.Timestamp
+	30, // 27: turnstile.v1.QueryAuditRequest.after:type_name -> google.protobuf.Timestamp
+	30, // 28: turnstile.v1.QueryAuditRequest.before:type_name -> google.protobuf.Timestamp
 	22, // 29: turnstile.v1.QueryAuditResponse.entries:type_name -> turnstile.v1.AuditEntry
 	4,  // 30: turnstile.v1.RateLimitConfig.PerActionEntry.value:type_name -> turnstile.v1.Limit
-	17, // 31: turnstile.v1.Turnstile.Check:input_type -> turnstile.v1.CheckRequest
-	21, // 32: turnstile.v1.Turnstile.Authenticate:input_type -> turnstile.v1.AuthenticateRequest
-	22, // 33: turnstile.v1.Turnstile.ReportAudit:input_type -> turnstile.v1.AuditEntry
-	8,  // 34: turnstile.v1.Turnstile.CreateKey:input_type -> turnstile.v1.CreateKeyRequest
-	9,  // 35: turnstile.v1.Turnstile.ListKeys:input_type -> turnstile.v1.ListKeysRequest
-	11, // 36: turnstile.v1.Turnstile.GetKey:input_type -> turnstile.v1.GetKeyRequest
-	12, // 37: turnstile.v1.Turnstile.UpdateKey:input_type -> turnstile.v1.UpdateKeyRequest
-	13, // 38: turnstile.v1.Turnstile.DeleteKey:input_type -> turnstile.v1.DeleteKeyRequest
-	15, // 39: turnstile.v1.Turnstile.GetPolicy:input_type -> turnstile.v1.GetPolicyRequest
-	16, // 40: turnstile.v1.Turnstile.UpdatePolicy:input_type -> turnstile.v1.UpdatePolicyRequest
-	24, // 41: turnstile.v1.Turnstile.QueryAudit:input_type -> turnstile.v1.QueryAuditRequest
-	18, // 42: turnstile.v1.Turnstile.Check:output_type -> turnstile.v1.CheckResponse
-	20, // 43: turnstile.v1.Turnstile.Authenticate:output_type -> turnstile.v1.Principal
-	23, // 44: turnstile.v1.Turnstile.ReportAudit:output_type -> turnstile.v1.ReportAuditSummary
-	7,  // 45: turnstile.v1.Turnstile.CreateKey:output_type -> turnstile.v1.Key
-	10, // 46: turnstile.v1.Turnstile.ListKeys:output_type -> turnstile.v1.ListKeysResponse
-	7,  // 47: turnstile.v1.Turnstile.GetKey:output_type -> turnstile.v1.Key
-	7,  // 48: turnstile.v1.Turnstile.UpdateKey:output_type -> turnstile.v1.Key
-	28, // 49: turnstile.v1.Turnstile.DeleteKey:output_type -> google.protobuf.Empty
-	14, // 50: turnstile.v1.Turnstile.GetPolicy:output_type -> turnstile.v1.Policy
-	14, // 51: turnstile.v1.Turnstile.UpdatePolicy:output_type -> turnstile.v1.Policy
-	25, // 52: turnstile.v1.Turnstile.QueryAudit:output_type -> turnstile.v1.QueryAuditResponse
-	42, // [42:53] is the sub-list for method output_type
-	31, // [31:42] is the sub-list for method input_type
-	31, // [31:31] is the sub-list for extension type_name
-	31, // [31:31] is the sub-list for extension extendee
-	0,  // [0:31] is the sub-list for field type_name
+	4,  // 31: turnstile.v1.Key.RateLimitsEntry.value:type_name -> turnstile.v1.Limit
+	4,  // 32: turnstile.v1.CreateKeyRequest.RateLimitsEntry.value:type_name -> turnstile.v1.Limit
+	4,  // 33: turnstile.v1.UpdateKeyRequest.RateLimitsEntry.value:type_name -> turnstile.v1.Limit
+	17, // 34: turnstile.v1.Turnstile.Check:input_type -> turnstile.v1.CheckRequest
+	21, // 35: turnstile.v1.Turnstile.Authenticate:input_type -> turnstile.v1.AuthenticateRequest
+	22, // 36: turnstile.v1.Turnstile.ReportAudit:input_type -> turnstile.v1.AuditEntry
+	8,  // 37: turnstile.v1.Turnstile.CreateKey:input_type -> turnstile.v1.CreateKeyRequest
+	9,  // 38: turnstile.v1.Turnstile.ListKeys:input_type -> turnstile.v1.ListKeysRequest
+	11, // 39: turnstile.v1.Turnstile.GetKey:input_type -> turnstile.v1.GetKeyRequest
+	12, // 40: turnstile.v1.Turnstile.UpdateKey:input_type -> turnstile.v1.UpdateKeyRequest
+	13, // 41: turnstile.v1.Turnstile.DeleteKey:input_type -> turnstile.v1.DeleteKeyRequest
+	15, // 42: turnstile.v1.Turnstile.GetPolicy:input_type -> turnstile.v1.GetPolicyRequest
+	16, // 43: turnstile.v1.Turnstile.UpdatePolicy:input_type -> turnstile.v1.UpdatePolicyRequest
+	24, // 44: turnstile.v1.Turnstile.QueryAudit:input_type -> turnstile.v1.QueryAuditRequest
+	18, // 45: turnstile.v1.Turnstile.Check:output_type -> turnstile.v1.CheckResponse
+	20, // 46: turnstile.v1.Turnstile.Authenticate:output_type -> turnstile.v1.Principal
+	23, // 47: turnstile.v1.Turnstile.ReportAudit:output_type -> turnstile.v1.ReportAuditSummary
+	7,  // 48: turnstile.v1.Turnstile.CreateKey:output_type -> turnstile.v1.Key
+	10, // 49: turnstile.v1.Turnstile.ListKeys:output_type -> turnstile.v1.ListKeysResponse
+	7,  // 50: turnstile.v1.Turnstile.GetKey:output_type -> turnstile.v1.Key
+	7,  // 51: turnstile.v1.Turnstile.UpdateKey:output_type -> turnstile.v1.Key
+	31, // 52: turnstile.v1.Turnstile.DeleteKey:output_type -> google.protobuf.Empty
+	14, // 53: turnstile.v1.Turnstile.GetPolicy:output_type -> turnstile.v1.Policy
+	14, // 54: turnstile.v1.Turnstile.UpdatePolicy:output_type -> turnstile.v1.Policy
+	25, // 55: turnstile.v1.Turnstile.QueryAudit:output_type -> turnstile.v1.QueryAuditResponse
+	45, // [45:56] is the sub-list for method output_type
+	34, // [34:45] is the sub-list for method input_type
+	34, // [34:34] is the sub-list for extension type_name
+	34, // [34:34] is the sub-list for extension extendee
+	0,  // [0:34] is the sub-list for field type_name
 }
 
 func init() { file_turnstile_v1_turnstile_proto_init() }
@@ -2030,7 +2063,7 @@ func file_turnstile_v1_turnstile_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_turnstile_v1_turnstile_proto_rawDesc), len(file_turnstile_v1_turnstile_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   25,
+			NumMessages:   28,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

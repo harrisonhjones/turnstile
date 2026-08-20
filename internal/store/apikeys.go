@@ -20,7 +20,7 @@ type APIKey struct {
 	Name           string
 	KeyHash        string
 	Statements     []policy.Statement
-	RateLimits     ratelimit.Config
+	RateLimits     ratelimit.PerActionLimits
 	Note           string
 	OwnerNamespace string
 	CreatedAt      time.Time

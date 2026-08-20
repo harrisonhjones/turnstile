@@ -32,7 +32,7 @@ func TestAPIKeyCRUD(t *testing.T) {
 		Name:           "alpha",
 		KeyHash:        "hash1",
 		Statements:     []policy.Statement{{Effect: policy.Allow, Actions: []string{"svc:read"}, Resources: []string{"*"}}},
-		RateLimits:     ratelimit.Config{Default: &ratelimit.Limit{PerMinute: 10}},
+		RateLimits:     ratelimit.PerActionLimits{"svc:read": {PerMinute: 10}},
 		Note:           "a note",
 		OwnerNamespace: "beeper",
 		CreatedAt:      now,
@@ -48,7 +48,7 @@ func TestAPIKeyCRUD(t *testing.T) {
 	if got.Name != "alpha" || got.OwnerNamespace != "beeper" || len(got.Statements) != 1 {
 		t.Errorf("round-trip mismatch: %+v", got)
 	}
-	if got.RateLimits.Default == nil || got.RateLimits.Default.PerMinute != 10 {
+	if l, ok := got.RateLimits["svc:read"]; !ok || l.PerMinute != 10 {
 		t.Errorf("rate limits not preserved: %+v", got.RateLimits)
 	}
 

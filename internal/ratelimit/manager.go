@@ -102,14 +102,14 @@ func isIdle(l *rate.Limiter, now time.Time) bool {
 // This is the reserve-then-confirm primitive behind the spec's "denied authz
 // never burns rate budget": callers only invoke Allow once authn and authz have
 // already passed, and a rate-limit block itself refunds both reservations.
-func (m *Manager) Allow(keyID string, keyCfg Config, action string) (ok bool, retryAfter time.Duration) {
+func (m *Manager) Allow(keyID string, keyLimits PerActionLimits, action string) (ok bool, retryAfter time.Duration) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	now := m.now()
 	var rk, rs *rate.Reservation
 
-	if l, has := effectiveKey(action, keyCfg, m.global.PerKey); has && !l.unlimited() {
+	if l, has := effectiveKey(action, keyLimits, m.global.PerKey); has && !l.unlimited() {
 		rk = m.limiter(m.keyActions(keyID), action, l).ReserveN(now, 1)
 	}
 	if l, has := m.global.ServiceWide.resolve(action); has && !l.unlimited() {

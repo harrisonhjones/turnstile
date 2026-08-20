@@ -21,10 +21,10 @@ func TestAllow_PerKeyBurstThenBlock(t *testing.T) {
 	g := Global{PerKey: Config{Default: &Limit{PerMinute: 60, Burst: 1}}}
 	m, _ := newClockManager(g)
 
-	if ok, _ := m.Allow("k1", Config{}, "svc:read"); !ok {
+	if ok, _ := m.Allow("k1", nil, "svc:read"); !ok {
 		t.Fatal("first call should be allowed (burst 1)")
 	}
-	ok, retry := m.Allow("k1", Config{}, "svc:read")
+	ok, retry := m.Allow("k1", nil, "svc:read")
 	if ok {
 		t.Fatal("second immediate call should be blocked")
 	}
@@ -36,22 +36,23 @@ func TestAllow_PerKeyBurstThenBlock(t *testing.T) {
 func TestAllow_Unlimited(t *testing.T) {
 	m, _ := newClockManager(Global{}) // no limits configured anywhere
 	for i := 0; i < 100; i++ {
-		if ok, _ := m.Allow("k1", Config{}, "svc:read"); !ok {
+		if ok, _ := m.Allow("k1", nil, "svc:read"); !ok {
 			t.Fatalf("call %d should be allowed when unlimited", i)
 		}
 	}
 }
 
 func TestAllow_KeyOverrideBeatsGlobalDefault(t *testing.T) {
-	// Global default is generous; the key's own override is stricter and wins.
+	// Global default is generous; the key's per-action override is stricter and
+	// wins for that action.
 	g := Global{PerKey: Config{Default: &Limit{PerMinute: 6000, Burst: 100}}}
 	m, _ := newClockManager(g)
-	keyCfg := Config{Default: &Limit{PerMinute: 60, Burst: 1}}
+	keyLimits := PerActionLimits{"svc:read": {PerMinute: 60, Burst: 1}}
 
-	if ok, _ := m.Allow("k1", keyCfg, "svc:read"); !ok {
+	if ok, _ := m.Allow("k1", keyLimits, "svc:read"); !ok {
 		t.Fatal("first call should be allowed")
 	}
-	if ok, _ := m.Allow("k1", keyCfg, "svc:read"); ok {
+	if ok, _ := m.Allow("k1", keyLimits, "svc:read"); ok {
 		t.Fatal("second call should be blocked by the key's stricter override")
 	}
 }
@@ -67,24 +68,24 @@ func TestAllow_RefundsOnBlock(t *testing.T) {
 	m, clock := newClockManager(g)
 
 	// call1: both limiters allow. service-wide now has ~1 token left.
-	if ok, _ := m.Allow("k1", Config{}, "svc:read"); !ok {
+	if ok, _ := m.Allow("k1", nil, "svc:read"); !ok {
 		t.Fatal("call1 should be allowed")
 	}
 	// call2 (same instant): per-key blocks. If the service-wide reservation is
 	// correctly refunded, service-wide still has ~1 token.
-	if ok, _ := m.Allow("k1", Config{}, "svc:read"); ok {
+	if ok, _ := m.Allow("k1", nil, "svc:read"); ok {
 		t.Fatal("call2 should be blocked by the per-key limiter")
 	}
 	// Advance just enough for the per-key bucket to refill (service-wide barely
 	// moves at 0.1/s).
 	*clock = clock.Add(200 * time.Millisecond)
 	// call3: per-key recovered; service-wide must still have its refunded token.
-	if ok, _ := m.Allow("k1", Config{}, "svc:read"); !ok {
+	if ok, _ := m.Allow("k1", nil, "svc:read"); !ok {
 		t.Fatal("call3 should be allowed — service-wide token must not have been burned on the blocked call2")
 	}
 	// call4: service-wide is now exhausted, so this blocks regardless of per-key.
 	*clock = clock.Add(200 * time.Millisecond)
-	if ok, _ := m.Allow("k1", Config{}, "svc:read"); ok {
+	if ok, _ := m.Allow("k1", nil, "svc:read"); ok {
 		t.Fatal("call4 should be blocked by the exhausted service-wide limiter")
 	}
 }
@@ -115,7 +116,7 @@ func TestEvictIdle(t *testing.T) {
 
 	// A request creates per-key and service-wide limiters and consumes their
 	// single token, so they are not yet idle.
-	if ok, _ := m.Allow("k1", Config{}, "svc:read"); !ok {
+	if ok, _ := m.Allow("k1", nil, "svc:read"); !ok {
 		t.Fatal("first call should be allowed")
 	}
 	m.EvictIdle()
@@ -148,7 +149,7 @@ func TestManagerConcurrent(t *testing.T) {
 			defer wg.Done()
 			key := fmt.Sprintf("k%d", i%5)
 			for j := 0; j < 50; j++ {
-				m.Allow(key, Config{Default: &Limit{PerMinute: 1200}}, "svc:read")
+				m.Allow(key, PerActionLimits{"svc:read": {PerMinute: 1200}}, "svc:read")
 			}
 		}(i)
 	}

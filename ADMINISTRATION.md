@@ -70,9 +70,9 @@ curl -sS http://localhost:8080/turnstile.v1.Turnstile/CreateKey \
     "note": "read-only access for the reporting job",
     "ownerNamespace": "photos",
     "statements": [
-      { "effect": "EFFECT_ALLOW", "actions": ["photos:listAlbums", "photos:getAlbum"], "resources": ["photos:*"] }
+      { "effect": "ALLOW", "actions": ["photos:listAlbums", "photos:getAlbum"], "resources": ["photos:*"] }
     ],
-    "rateLimits": { "perAction": { "photos:getAlbum": { "perMinute": 60 } } }
+    "rateLimits": { "photos:getAlbum": { "perMinute": 60 } }
   }'
 ```
 
@@ -80,6 +80,14 @@ The response includes `plaintextToken` **once** — store it and hand it to the
 host/client; only the hash is persisted, so it can never be shown again. (See
 [CLIENT-INTEGRATION.md](CLIENT-INTEGRATION.md#namespacing) for how to choose the
 action/resource strings in `statements`.)
+
+A statement's `effect` is `ALLOW` or `DENY`. A key's `rateLimits` is a plain
+map of `action → limit` (per-action overrides only; the baseline comes from the
+global policy's per-key defaults). `ownerNamespace` is an **optional
+organizational label** — it records which team or service owns the key so you
+can filter `ListKeys` and group keys in the console. It is never used for
+authorization (isolation between projects comes from the action/resource
+namespacing, not this tag), so it can be any string or left empty.
 
 Other key operations (all admin-gated):
 
@@ -101,9 +109,10 @@ curl -sS .../DeleteKey  -H "Authorization: Bearer $ADMIN_TOKEN" \
   -H "Content-Type: application/json" -d '{"id": "key_..."}'
 ```
 
-`UpdateKey` is a true partial update: absent scalar fields are left unchanged;
-`statements`/`rateLimits` replace only when present; and expiry is set via
-`expiresAt` or removed via `clearExpiry`. A disabled or expired key fails
+`UpdateKey` is a true partial update: absent scalar fields are left unchanged.
+`statements` replaces only when present; a non-empty `rateLimits` map replaces
+the overrides (use `clearRateLimits: true` to remove them all); and expiry is set
+via `expiresAt` or removed via `clearExpiry`. A disabled or expired key fails
 authentication (indistinguishably from an unknown token).
 
 ## Managing the global policy
@@ -118,7 +127,7 @@ back with `UpdatePolicy`:
 curl -sS http://localhost:8080/turnstile.v1.Turnstile/UpdatePolicy \
   -H "Content-Type: application/json" -H "Authorization: Bearer $ADMIN_TOKEN" \
   -d '{
-    "statements": [ { "effect": "EFFECT_DENY", "actions": ["photos:deleteAlbum"], "resources": ["*"] } ],
+    "statements": [ { "effect": "DENY", "actions": ["photos:deleteAlbum"], "resources": ["*"] } ],
     "rateLimits": { "perKey": { "default": { "perMinute": 120 } }, "serviceWide": { "default": { "perMinute": 600 } } },
     "expectedVersion": 1
   }'
@@ -136,9 +145,11 @@ re-fetch and retry).
 > modified policy back — don't hand-write a partial body.
 
 **Rate limits** apply at two independent levels that must both pass: `perKey`
-(per-key defaults, overridable per key via `CreateKey`/`UpdateKey`) and
-`serviceWide` (an aggregate cap across all keys). Each is a `default` plus
-optional `perAction` overrides, in requests per minute.
+(the per-key baseline every key inherits) and `serviceWide` (an aggregate cap
+across all keys). Here in the global policy, each is a `default` plus optional
+`perAction` overrides, in requests per minute. An individual key can then tighten
+or loosen specific actions via its own `rateLimits` map (`CreateKey`/`UpdateKey`)
+— that map is per-action only; a key has no blanket default of its own.
 
 ## Auditing
 

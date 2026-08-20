@@ -46,7 +46,7 @@ func (h *Handler) CreateKey(ctx context.Context, req *connect.Request[turnstilev
 	if err := policy.ValidateStatements(statements); err != nil {
 		return nil, invalidArg("statements: %v", err)
 	}
-	limits := configFromPB(r.RateLimits)
+	limits := perActionFromPB(r.RateLimits)
 	if err := limits.Validate(); err != nil {
 		return nil, invalidArg("rate limits: %v", err)
 	}
@@ -123,6 +123,9 @@ func (h *Handler) UpdateKey(ctx context.Context, req *connect.Request[turnstilev
 	if r.ClearExpiry && r.ExpiresAt != nil {
 		return nil, invalidArg("expires_at and clear_expiry are mutually exclusive")
 	}
+	if r.ClearRateLimits && len(r.RateLimits) > 0 {
+		return nil, invalidArg("rate_limits and clear_rate_limits are mutually exclusive")
+	}
 
 	var validationErr error
 	updated, err := h.store.UpdateAPIKeyFunc(ctx, r.Id, func(k *store.APIKey) error {
@@ -150,8 +153,13 @@ func (h *Handler) UpdateKey(ctx context.Context, req *connect.Request[turnstilev
 			}
 			k.Statements = statements
 		}
-		if r.RateLimits != nil {
-			limits := configFromPB(r.RateLimits)
+		// rate_limits: a map has no presence, so a non-empty map replaces the
+		// key's overrides, clear_rate_limits removes them all, and an empty/absent
+		// map leaves them unchanged.
+		if r.ClearRateLimits {
+			k.RateLimits = nil
+		} else if len(r.RateLimits) > 0 {
+			limits := perActionFromPB(r.RateLimits)
 			if verr := limits.Validate(); verr != nil {
 				validationErr = invalidArg("rate limits: %v", verr)
 				return validationErr

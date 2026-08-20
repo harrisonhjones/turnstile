@@ -80,10 +80,26 @@ type Global struct {
 	ServiceWide Config `json:"serviceWide,omitempty"`
 }
 
-// effectiveKey resolves the per-key limit for (keyCfg, action): the key's own
-// entry/default first, then the global per-key entry/default.
-func effectiveKey(action string, keyCfg, globalPerKey Config) (Limit, bool) {
-	if l, ok := keyCfg.resolve(action); ok {
+// PerActionLimits is a key's own rate-limit overrides: a limit per action. A key
+// can only tighten (or loosen) specific actions; it has no blanket default —
+// that baseline comes from the global per-key config — so this is a plain
+// action→Limit map rather than a Config.
+type PerActionLimits map[string]Limit
+
+// Validate rejects malformed limit values in a key's overrides.
+func (p PerActionLimits) Validate() error {
+	for action, l := range p {
+		if err := l.validate("rateLimits." + action); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// effectiveKey resolves the per-key limit for (keyLimits, action): the key's own
+// per-action override first, then the global per-key entry/default.
+func effectiveKey(action string, keyLimits PerActionLimits, globalPerKey Config) (Limit, bool) {
+	if l, ok := keyLimits[action]; ok {
 		return l, true
 	}
 	return globalPerKey.resolve(action)
