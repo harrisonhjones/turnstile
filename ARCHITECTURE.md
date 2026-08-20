@@ -4,6 +4,21 @@ Turnstile is one small Connect service over a SQLite database. This document
 covers how the pieces fit and the decisions worth knowing before changing them.
 Low-level specifics live in Godoc.
 
+## Transport
+
+The API is served with [Connect](https://connectrpc.com) from a single port. One
+handler speaks three protocols: gRPC (HTTP/2 wire framing) for the `Check` hot
+path, gRPC-Web, and the Connect HTTP/1.1 JSON protocol — so management calls are
+`curl`- and browser-friendly (the web console uses the JSON protocol directly).
+Without TLS the server is wrapped in `h2c` so the gRPC hot path works over
+plaintext HTTP/2; with TLS, HTTP/2 is negotiated via ALPN. The proto package is
+`turnstile.v1` (`proto/turnstile/v1/turnstile.proto`); Go + Connect stubs are
+generated with `buf` into `gen/` and committed.
+
+Swapping Connect for raw `google.golang.org/grpc` would be possible — the
+`internal/*` core is transport-neutral — but Connect's multi-protocol support is
+why management is usable without a gRPC client.
+
 ## The request paths
 
 ```
@@ -43,6 +58,24 @@ Low-level specifics live in Godoc.
 | `internal/server` | Connect handlers wiring the above together, plus the proto↔domain conversion layer. |
 | `internal/management` | Serves the embedded SPA (`go:embed`), with a placeholder until the UI is built. |
 | `internal/config` | Environment + `.env` configuration. |
+
+## Repository layout
+
+```
+cmd/turnstile/       entrypoint: config, store, bootstrap, serve, graceful shutdown
+proto/turnstile/v1/  .proto sources
+gen/turnstile/v1/    buf-generated Go + Connect stubs (committed)
+internal/
+  token/             key/credential type, gen/hash, authentication, authorizer, policy cache, bootstrap
+  policy/            domain-agnostic statement engine + validation
+  ratelimit/         per-key + service-wide limiter manager
+  audit/             background writer + retention
+  store/             SQLite schema + accessors
+  server/            Connect handlers + shutdown gate wiring it all together
+  config/            environment + .env configuration
+  management/ui/     embedded Ionic React admin SPA (→ ui/dist via go:embed)
+magefile.go          build:/run:/gen/fmt:/vet:/test:/check/clean:/resetDB targets
+```
 
 ## Key decisions
 

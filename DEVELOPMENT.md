@@ -54,6 +54,26 @@ mage run:ui              # terminal 2 — Vite dev server, proxies API calls to 
 `mage gen`, then rebuild. The generated code under `gen/` is committed so the
 project builds without buf.
 
+## Configuration
+
+All configuration is via environment variables, seeded on startup from an
+optional `.env` file in the working directory (`cp .env.example .env`); real
+environment variables always take precedence. Every value is optional with a
+sane default.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `LISTEN_ADDR` | `:8080` | Address to bind. Serves the Connect API, the UI at `/ui/`, and `/health`. |
+| `DB_PATH` | `turnstile.db` | SQLite database file path. |
+| `AUDIT_RETENTION_DAYS` | `365` | Days of audit log to keep; `0` keeps entries forever. |
+| `SERVICE_CREDENTIAL` | *(unset)* | If set, required as `Authorization: Bearer` on the host-facing RPCs (`Check`/`Authenticate`/`ReportAudit`). Unset leaves them open (rely on mTLS or network isolation). |
+| `TLS_CERT_FILE` / `TLS_KEY_FILE` | *(unset)* | Set both to serve HTTPS. |
+| `TLS_CLIENT_CA_FILE` | *(unset)* | With TLS enabled, require and verify client certificates against this CA (mTLS). |
+
+See [`.env.example`](.env.example) for the annotated source of truth. The
+host→Turnstile authentication options (service credential vs. mTLS) are covered
+in [ARCHITECTURE.md](ARCHITECTURE.md).
+
 ## Testing
 
 ```sh
