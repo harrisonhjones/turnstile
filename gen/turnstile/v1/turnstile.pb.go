@@ -1114,13 +1114,13 @@ func (x *UpdatePolicyRequest) GetExpectedVersion() int64 {
 type CheckRequest struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	ClientToken string                 `protobuf:"bytes,1,opt,name=client_token,json=clientToken,proto3" json:"client_token,omitempty"` // the API key presented by the end user/agent
-	Action      string                 `protobuf:"bytes,2,opt,name=action,proto3" json:"action,omitempty"`                              // service-namespaced, e.g. "beeper:sendMessage"
-	// resources identifies the target object; e.g. ["beeper:chat:!abc"]. Matched
+	Action      string                 `protobuf:"bytes,2,opt,name=action,proto3" json:"action,omitempty"`                              // service-namespaced, e.g. "photos:getAlbum"
+	// resources identifies the target object; e.g. ["photos:album:a1b2"]. Matched
 	// as OR (a statement matches if any resource matches). At least one resource
 	// is REQUIRED: a statement matches a resource pattern, so a Check with no
 	// resources always evaluates to a deny — even under an allow-all key. Actions
 	// that don't name a concrete object should pass a stable synthetic resource
-	// (e.g. "beeper:account:wa123" or a "svc:*"-style capability resource).
+	// (e.g. "photos:account:acct_42" or a "svc:*"-style capability resource).
 	Resources      []string `protobuf:"bytes,3,rep,name=resources,proto3" json:"resources,omitempty"`
 	CountRateLimit bool     `protobuf:"varint,4,opt,name=count_rate_limit,json=countRateLimit,proto3" json:"count_rate_limit,omitempty"` // consume budget (only when authn + authz pass)
 	unknownFields  protoimpl.UnknownFields
@@ -1574,7 +1574,7 @@ type QueryAuditRequest struct {
 	ApiKeyId      string                 `protobuf:"bytes,1,opt,name=api_key_id,json=apiKeyId,proto3" json:"api_key_id,omitempty"`           // exact key id
 	Method        string                 `protobuf:"bytes,2,opt,name=method,proto3" json:"method,omitempty"`                                 // exact method
 	PathPrefix    string                 `protobuf:"bytes,3,opt,name=path_prefix,json=pathPrefix,proto3" json:"path_prefix,omitempty"`       // path prefix match
-	ActionPrefix  string                 `protobuf:"bytes,4,opt,name=action_prefix,json=actionPrefix,proto3" json:"action_prefix,omitempty"` // action-namespace prefix match (e.g. "beeper:")
+	ActionPrefix  string                 `protobuf:"bytes,4,opt,name=action_prefix,json=actionPrefix,proto3" json:"action_prefix,omitempty"` // action-namespace prefix match (e.g. "photos:")
 	Status        int32                  `protobuf:"varint,5,opt,name=status,proto3" json:"status,omitempty"`                                // exact response status
 	After         *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=after,proto3" json:"after,omitempty"`                                   // entries at or after
 	Before        *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=before,proto3" json:"before,omitempty"`                                 // entries at or before

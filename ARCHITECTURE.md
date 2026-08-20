@@ -80,8 +80,8 @@ magefile.go          build:/run:/gen/fmt:/vet:/test:/check/clean:/resetDB target
 ## Key decisions
 
 **One shared instance; isolation by namespacing.** Every action/resource is a
-prefixed string (`beeper:sendMessage`). The engine matches opaque strings, so
-`beeper:*` can never authorize `plaid:*`. There is no realm/tenant construct —
+prefixed string (`photos:listAlbums`). The engine matches opaque strings, so
+`photos:*` can never authorize `payments:*`. There is no realm/tenant construct —
 the prefix is host vocabulary that Turnstile never parses. This is what keeps
 `internal/policy` domain-agnostic and reusable across projects.
 

@@ -17,20 +17,20 @@ Prefix every action and resource with your service name so grants can't leak
 across projects that share the instance:
 
 ```
-action:    "beeper:sendMessage"
-resources: ["beeper:chat:!abc", "beeper:account:wa123"]
+action:    "photos:getAlbum"
+resources: ["photos:album:a1b2", "photos:account:acct_42"]
 ```
 
-Turnstile never parses the prefix — it is pure convention that keeps `beeper:*`
-grants from ever matching another service's `plaid:*` actions. A single object
+Turnstile never parses the prefix — it is pure convention that keeps `photos:*`
+grants from ever matching another service's `payments:*` actions. A single object
 can be named by several resources; `Check` treats the list as OR, so an
-account-scoped grant (`beeper:account:wa*`) covers every chat within it.
+account-scoped grant (`photos:account:acct_*`) covers every album within it.
 
 > **Always pass at least one resource.** A policy statement matches by resource
 > pattern, so a `Check` with an empty `resources` list evaluates to a deny even
 > under an allow-all key. For an action that doesn't name a concrete object, use
-> a stable synthetic resource (e.g. `beeper:account:wa123`, or a capability-style
-> `beeper:reports:*`) so the statement has something to match.
+> a stable synthetic resource (e.g. `photos:account:acct_42`, or a capability-style
+> `photos:reports:*`) so the statement has something to match.
 
 ## Two credentials
 
@@ -56,13 +56,13 @@ curl -sS http://localhost:8080/turnstile.v1.Turnstile/CreateKey \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
   -d '{
-    "name": "beeper-reader",
+    "name": "photos-reader",
     "note": "read-only access for the reporting job",
-    "ownerNamespace": "beeper",
+    "ownerNamespace": "photos",
     "statements": [
-      { "effect": "EFFECT_ALLOW", "actions": ["beeper:listChats", "beeper:listMessages"], "resources": ["beeper:*"] }
+      { "effect": "EFFECT_ALLOW", "actions": ["photos:listAlbums", "photos:getAlbum"], "resources": ["photos:*"] }
     ],
-    "rateLimits": { "perAction": { "beeper:listMessages": { "perMinute": 60 } } }
+    "rateLimits": { "perAction": { "photos:getAlbum": { "perMinute": 60 } } }
   }'
 ```
 
@@ -75,7 +75,7 @@ Tighten the global deny-only ceiling (allow statements are rejected here):
 curl -sS http://localhost:8080/turnstile.v1.Turnstile/UpdatePolicy \
   -H "Content-Type: application/json" -H "Authorization: Bearer $ADMIN_TOKEN" \
   -d '{
-    "statements": [ { "effect": "EFFECT_DENY", "actions": ["beeper:deleteMessage"], "resources": ["*"] } ],
+    "statements": [ { "effect": "EFFECT_DENY", "actions": ["photos:deleteAlbum"], "resources": ["*"] } ],
     "rateLimits": { "perKey": { "default": { "perMinute": 120 } }, "serviceWide": { "default": { "perMinute": 600 } } },
     "expectedVersion": 1
   }'
@@ -98,11 +98,11 @@ curl -sS http://localhost:8080/turnstile.v1.Turnstile/Check \
   -H "Content-Type: application/json" \
   -d '{
     "clientToken": "tsk_...",
-    "action": "beeper:listMessages",
-    "resources": ["beeper:chat:!abc"],
+    "action": "photos:getAlbum",
+    "resources": ["photos:album:a1b2"],
     "countRateLimit": true
   }'
-# -> {"allowed":true,"principal":{"keyId":"key_...","name":"beeper-reader"},"decision":"ALLOWED","rateLimit":{}}
+# -> {"allowed":true,"principal":{"keyId":"key_...","name":"photos-reader"},"decision":"ALLOWED","rateLimit":{}}
 ```
 
 `decision` is one of `ALLOWED`, `UNAUTHENTICATED`, `POLICY_DENIED`,
@@ -126,8 +126,8 @@ client := turnstilev1connect.NewTurnstileClient(http.DefaultClient, "http://loca
 // In your middleware, for each incoming request:
 resp, err := client.Check(ctx, connect.NewRequest(&turnstilev1.CheckRequest{
 	ClientToken:    userToken,                       // the tsk_ key the caller presented
-	Action:         "beeper:sendMessage",
-	Resources:      []string{"beeper:chat:" + chatID},
+	Action:         "photos:getAlbum",
+	Resources:      []string{"photos:album:" + albumID},
 	CountRateLimit: true,
 }))
 if err != nil { /* transport error → 502 */ }
@@ -175,11 +175,12 @@ Keep `requestSummary` free of sensitive content (message bodies, secrets). Query
 it back through the admin-guarded `QueryAudit` RPC or the web UI, filterable by
 key, action-namespace prefix, method, status, and time range.
 
-## Migration sketch (e.g. beeper-api-proxy)
+## Migration sketch
 
-Both the HTTP middleware and any non-HTTP entrypoint (an MCP guard) call `Check`
-with the same namespaced vocabulary the host already uses internally; `whoami`
-maps to `Authenticate`; completed requests are buffered and streamed via
-`ReportAudit`. The host keeps its `svc:` prefix and resource builders — Turnstile
-only sees strings. Expect one extra round-trip per request until (if ever) an
-edge cache lands.
+To move a host off in-process authorization: both its HTTP middleware and any
+non-HTTP entrypoint (e.g. a tool/RPC guard) call `Check` with the same
+namespaced vocabulary the host already uses internally; a `whoami` maps to
+`Authenticate`; completed requests are buffered and streamed via `ReportAudit`.
+The host keeps its own `<service>:` prefix and resource builders — Turnstile only
+sees strings. Expect one extra round-trip per request until (if ever) an edge
+cache lands.

@@ -12,8 +12,8 @@ counts every entry (audit).
 ## What you use it for
 
 - **Central access control for many projects.** Run one shared instance; each
-  service namespaces its own actions and resources (`beeper:sendMessage`,
-  `plaid:readAccount`), and those namespaces stay isolated from each other.
+  service namespaces its own actions and resources (`photos:listAlbums`,
+  `payments:createCharge`), and those namespaces stay isolated from each other.
 - **Issuing and managing API keys.** Mint opaque bearer keys with fine-grained
   allow/deny policy statements, per-key rate limits, expiry, and enable/disable
   — via an API or the built-in web console.
@@ -30,19 +30,23 @@ gRPC-wire-compatible while management is also plain `curl`- and browser-friendly
 Requires **Go** (version pinned in `go.mod`); SQLite is pure-Go, so there's no
 CGO or system SQLite to install.
 
+Builds use [mage](https://magefile.org) (`go install github.com/magefile/mage@latest`).
+
 ```sh
 git clone https://github.com/harrisonhjones/turnstile
 cd turnstile
 
-# Backend-only build — no extra tooling; serves the UI placeholder page:
-go build -o turnstile ./cmd/turnstile && ./turnstile
+# Build the binary and run it. This uses the committed proto stubs and ships a
+# UI placeholder, so nothing beyond Go and mage is needed:
+mage build:backend && ./turnstile
 
-# Or the full build (regenerate protos + build the web UI + binary). This needs
-# extra tooling — mage, buf + protoc-gen-go + protoc-gen-connect-go, and Node —
-# see DEVELOPMENT.md. Not required just to run the service: the stubs are
-# committed and a UI placeholder ships, so the `go build` above is enough.
-mage build:all && ./turnstile
+# During development, `mage run:backend` builds and runs in one step (with hot
+# reload if `air` is installed).
 ```
+
+The full build — regenerating protos and compiling the web UI — is
+`mage build:all`, which needs extra tooling (buf, the protoc plugins, and Node);
+see [DEVELOPMENT.md](DEVELOPMENT.md). It isn't required just to run the service.
 
 On first start against an empty database, Turnstile prints a **bootstrap admin
 token once** — save it; it guards the management API and web console:
@@ -64,7 +68,8 @@ copy `.env.example` to `.env` to customize. See
   transport, and repository layout.
 - **[DEVELOPMENT.md](DEVELOPMENT.md)** — building, testing, configuration, and
   contributing.
-- **[docs/client-integration.md](docs/client-integration.md)** — how a host
-  service calls `Check` and streams `ReportAudit` (with `curl` and Go examples).
+- **[CLIENT-INTEGRATION.md](CLIENT-INTEGRATION.md)** — how a host service calls
+  `Check` and streams `ReportAudit` (with `curl` and Go examples).
 
-Low-level details live in Godoc — read the package docs with `go doc ./internal/...`.
+Low-level details live in Godoc — read the package docs with `go doc ./internal/...`
+(there's no mage target for it).
