@@ -4,8 +4,8 @@ modules:
 lint:
   use:
     - STANDARD
-  # The Decision enum uses spec-mandated values (ALLOWED = 0, not
-  # DECISION_UNSPECIFIED = 0) to match the wire contract in SPEC.md, so the
+  # The Decision enum uses fixed wire values (ALLOWED = 0, not
+  # DECISION_UNSPECIFIED = 0) as part of the turnstile.v1 contract, so the
   # zero-value and prefix rules are disabled for it.
   except:
     - ENUM_ZERO_VALUE_SUFFIX
