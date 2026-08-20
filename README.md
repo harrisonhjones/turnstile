@@ -68,8 +68,12 @@ copy `.env.example` to `.env` to customize. See
   transport, and repository layout.
 - **[DEVELOPMENT.md](DEVELOPMENT.md)** — building, testing, configuration, and
   contributing.
-- **[CLIENT-INTEGRATION.md](CLIENT-INTEGRATION.md)** — how a host service calls
-  `Check` and streams `ReportAudit` (with `curl` and Go examples).
+- **[CLIENT-INTEGRATION.md](CLIENT-INTEGRATION.md)** — for host services: how to
+  call `Check`/`Authenticate` and stream `ReportAudit` (with `curl` and Go
+  examples).
+- **[ADMINISTRATION.md](ADMINISTRATION.md)** — for operators: running the
+  service, minting/managing keys, editing policy, auditing, and securing
+  host→Turnstile (service credential or mTLS).
 
 Low-level details live in Godoc — read the package docs with `go doc ./internal/...`
 (there's no mage target for it).

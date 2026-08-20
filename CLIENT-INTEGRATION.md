@@ -1,8 +1,12 @@
 # Client integration
 
-This guide shows how a host service (an API proxy, gateway, MCP server, …)
-delegates authorization to Turnstile. A host replaces its in-process
-authorization with three interactions:
+This guide is for **host services** (an API proxy, gateway, MCP/RPC server, …)
+integrating with Turnstile: how to authorize requests, resolve identities, and
+report audit. For the operator side — running the service, minting the keys you
+use here, editing policy, and browsing audit — see
+[ADMINISTRATION.md](ADMINISTRATION.md).
+
+A host replaces its in-process authorization with three interactions:
 
 1. **On each request** — call `Check(token, "svc:action", resources, count_rate_limit=true)`.
 2. **For a whoami** — call `Authenticate(token)`.
@@ -32,66 +36,36 @@ account-scoped grant (`photos:account:acct_*`) covers every album within it.
 > a stable synthetic resource (e.g. `photos:account:acct_42`, or a capability-style
 > `photos:reports:*`) so the statement has something to match.
 
-## Two credentials
+## Credentials
 
-- **Admin credential** (`tsa_…`) — guards the management RPCs. Seeded and logged
-  once on first run; used by operators and the web UI, not by hosts on the hot
-  path.
-- **Client token** (`tsk_…`) — an end user's / agent's API key, minted by an
-  operator via `CreateKey`. This is what the host passes to `Check`.
+- **Client token** (`tsk_…`) — the end user's / agent's API key that your host
+  received and passes to `Check`/`Authenticate`. An operator mints it with
+  `CreateKey` (see [ADMINISTRATION.md](ADMINISTRATION.md#managing-keys)); it
+  carries the policy and rate limits Turnstile evaluates.
+- **Admin credential** (`tsa_…`) — guards the management RPCs; used by operators
+  and the web console, **not** by a host on the hot path.
 
-Optionally, a host authenticates *itself* to Turnstile with a shared
-`SERVICE_CREDENTIAL` (sent as `Authorization: Bearer` metadata on
-`Check`/`Authenticate`/`ReportAudit`) or with mTLS. This is separate from the
-end user's `client_token` — authorization keys off the namespaced action and the
-client token, never the calling host's identity.
+Authorization keys off the namespaced action and the client token — never your
+host's identity.
 
-## Management with curl (Connect HTTP/JSON)
+## Authenticating the host
 
-Every unary RPC is a `POST` to `/turnstile.v1.Turnstile/<Method>` with a JSON
-body. Create a client key (requires the admin credential):
+Separately from the end user's `client_token`, your host may need to authenticate
+*itself* to Turnstile so only trusted hosts can reach the service-facing RPCs.
+Depending on how the operator configured the service
+([ADMINISTRATION.md](ADMINISTRATION.md#securing-host--turnstile)):
 
-```sh
-curl -sS http://localhost:8080/turnstile.v1.Turnstile/CreateKey \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $ADMIN_TOKEN" \
-  -d '{
-    "name": "photos-reader",
-    "note": "read-only access for the reporting job",
-    "ownerNamespace": "photos",
-    "statements": [
-      { "effect": "EFFECT_ALLOW", "actions": ["photos:listAlbums", "photos:getAlbum"], "resources": ["photos:*"] }
-    ],
-    "rateLimits": { "perAction": { "photos:getAlbum": { "perMinute": 60 } } }
-  }'
-```
-
-The response includes `plaintextToken` **once** — store it; only the hash is
-persisted. Give that token to the client/host.
-
-Tighten the global deny-only ceiling (allow statements are rejected here):
-
-```sh
-curl -sS http://localhost:8080/turnstile.v1.Turnstile/UpdatePolicy \
-  -H "Content-Type: application/json" -H "Authorization: Bearer $ADMIN_TOKEN" \
-  -d '{
-    "statements": [ { "effect": "EFFECT_DENY", "actions": ["photos:deleteAlbum"], "resources": ["*"] } ],
-    "rateLimits": { "perKey": { "default": { "perMinute": 120 } }, "serviceWide": { "default": { "perMinute": 600 } } },
-    "expectedVersion": 1
-  }'
-```
-
-`expectedVersion` is the optimistic-concurrency guard: pass the `version` you
-last read from `GetPolicy`; a mismatch returns `aborted`.
-
-> **`UpdatePolicy` replaces the whole policy (PUT semantics), not a patch.** Both
-> `statements` and `rateLimits` are written wholesale, with no "leave unchanged"
-> option: omit `rateLimits` and you clear **all** rate limiting; omit
-> `statements` and you clear the deny ceiling. Always base the request on a fresh
-> `GetPolicy` (which you need anyway for `expectedVersion`) and send the full,
-> modified policy back — don't hand-write a partial body.
+- **Service credential** — send the shared secret as an `Authorization: Bearer`
+  header on `Check`/`Authenticate`/`ReportAudit`.
+- **mTLS** — present your client certificate on the connection (configure your
+  HTTP client's TLS with the cert/key the operator issued you).
+- **Neither** — nothing extra to send; the endpoint is guarded by network
+  isolation.
 
 ## The hot path with curl
+
+Every unary RPC is a `POST` to `/turnstile.v1.Turnstile/<Method>` with a JSON
+body:
 
 ```sh
 curl -sS http://localhost:8080/turnstile.v1.Turnstile/Check \
@@ -108,7 +82,8 @@ curl -sS http://localhost:8080/turnstile.v1.Turnstile/Check \
 `decision` is one of `ALLOWED`, `UNAUTHENTICATED`, `POLICY_DENIED`,
 `RATE_LIMITED`. On `RATE_LIMITED`, `rateLimit.retryAfterMs` tells the client how
 long to back off. Set `countRateLimit=false` for a dry authorization check that
-consumes no budget.
+consumes no budget. (Unknown, disabled, and expired tokens all return
+`UNAUTHENTICATED` — you can't distinguish them, by design.)
 
 ## The hot path from Go (gRPC-compatible Connect client)
 
@@ -145,7 +120,9 @@ case turnstilev1.Decision_RATE_LIMITED:
 ```
 
 If you want gRPC wire framing (HTTP/2) instead of the Connect protocol, pass
-`connect.WithGRPC()` to `NewTurnstileClient`.
+`connect.WithGRPC()` to `NewTurnstileClient`. `Authenticate` is the same shape as
+`Check` and returns just the `Principal` — use it for a `whoami` with no
+authorization or rate-limit side effects.
 
 ## Reporting audit
 
@@ -171,9 +148,10 @@ for _, e := range buffered {
 summary, err := stream.CloseAndReceive() // summary.Msg.Accepted = count stored
 ```
 
-Keep `requestSummary` free of sensitive content (message bodies, secrets). Query
-it back through the admin-guarded `QueryAudit` RPC or the web UI, filterable by
-key, action-namespace prefix, method, status, and time range.
+Keep `requestSummary` free of sensitive content (message bodies, secrets). A
+single call is capped at 10,000 entries — split larger batches across calls.
+Operators query it back through `QueryAudit` or the web console (see
+[ADMINISTRATION.md](ADMINISTRATION.md#auditing)).
 
 ## Migration sketch
 
