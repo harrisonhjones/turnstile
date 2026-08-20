@@ -1,0 +1,27 @@
+# Air config for hot-reloading Turnstile during development.
+# Invoked via `mage run:backend`. Air watches Go sources only; the UI is a
+# separate Vite build (embedded via `mage build:ui`, or served live by `mage
+# run:ui`), so its sources under internal/management/ui are excluded.
+
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  cmd = "go build -o ./tmp/turnstile ./cmd/turnstile/"
+  bin = "./tmp/turnstile"
+  # Watch Go sources only.
+  include_ext = ["go"]
+  # Don't watch generated stubs, output dirs, the UI project, or the DB.
+  exclude_dir = ["tmp", "build", ".git", "docs", "gen", "internal/management/ui"]
+  exclude_regex = ["_test\\.go"]
+  # Rebuild at most once per second when many files change together.
+  delay = 500
+  stop_on_error = true
+  # Surface build errors in the terminal.
+  log = "build-errors.log"
+
+[misc]
+  clean_on_exit = true
+
+[screen]
+  clear_on_rebuild = false

@@ -1,0 +1,252 @@
+syntax = "proto3";
+
+package turnstile.v1;
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/harrisonhjones/turnstile/gen/turnstile/v1;turnstilev1";
+
+// Turnstile is a standalone access-control service: it authenticates API keys,
+// evaluates a statement-based policy engine, enforces rate limits, and records
+// an audit trail. Actions and resources are opaque, service-namespaced strings
+// (e.g. "beeper:sendMessage", "beeper:chat:!abc"); Turnstile never parses them.
+service Turnstile {
+  // Check does authn + authz + rate limiting in one round-trip (the hot path).
+  // It does NOT write audit: status and latency are not known until the calling
+  // host finishes the request, so hosts report audit afterward via ReportAudit.
+  rpc Check(CheckRequest) returns (CheckResponse);
+
+  // Authenticate resolves a client token to its Principal (identity only), for
+  // a "whoami"-style lookup. No authorization or rate limiting is performed.
+  rpc Authenticate(AuthenticateRequest) returns (Principal);
+
+  // ReportAudit ingests a stream of audit entries for completed requests.
+  rpc ReportAudit(stream AuditEntry) returns (ReportAuditSummary);
+
+  // Management RPCs. All require an admin credential (see the service docs).
+  rpc CreateKey(CreateKeyRequest) returns (Key);
+  rpc ListKeys(ListKeysRequest) returns (ListKeysResponse);
+  rpc GetKey(GetKeyRequest) returns (Key);
+  rpc UpdateKey(UpdateKeyRequest) returns (Key);
+  rpc DeleteKey(DeleteKeyRequest) returns (google.protobuf.Empty);
+  rpc GetPolicy(GetPolicyRequest) returns (Policy);
+  rpc UpdatePolicy(UpdatePolicyRequest) returns (Policy); // optimistic version check
+  rpc QueryAudit(QueryAuditRequest) returns (QueryAuditResponse);
+}
+
+// ---- Policy model ----
+
+// Effect is the outcome a matching statement applies.
+enum Effect {
+  EFFECT_UNSPECIFIED = 0;
+  EFFECT_ALLOW = 1;
+  EFFECT_DENY = 2;
+}
+
+// Statement grants (allow) or blocks (deny) a set of actions on a set of
+// resources. Actions and resources are opaque strings supporting a single
+// trailing '*' wildcard. Resources are conventionally "type:id"; an object may
+// be named by several resources at once (matched as OR).
+message Statement {
+  Effect effect = 1;
+  repeated string actions = 2;
+  repeated string resources = 3;
+  string note = 4;
+}
+
+// StatementList wraps a repeated Statement so it can be used as a presence-
+// bearing optional field in UpdateKeyRequest (absent = leave unchanged).
+message StatementList {
+  repeated Statement statements = 1;
+}
+
+// ---- Rate-limit model ----
+
+// Limit is a single rate limit. per_minute <= 0 means unlimited; burst <= 0
+// selects a sane default derived from the rate.
+message Limit {
+  double per_minute = 1;
+  int32 burst = 2;
+}
+
+// RateLimitConfig is an optional Default plus per-action overrides. Used for a
+// key's own overrides, the global per-key defaults, and the service-wide caps.
+message RateLimitConfig {
+  Limit default = 1;
+  map<string, Limit> per_action = 2;
+}
+
+// RateLimits is the rate-limit configuration on the global policy: the defaults
+// every key inherits (per_key) and the aggregate caps (service_wide).
+message RateLimits {
+  RateLimitConfig per_key = 1;
+  RateLimitConfig service_wide = 2;
+}
+
+// ---- Keys ----
+
+// Key is a stored API key. The plaintext token is never persisted; only its
+// SHA-256 hash. plaintext_token is populated ONLY in the CreateKey response and
+// is shown to the operator exactly once.
+message Key {
+  string id = 1;
+  string name = 2;
+  string note = 3;
+  repeated Statement statements = 4;
+  RateLimitConfig rate_limits = 5;
+  bool disabled = 6;
+  string owner_namespace = 7; // management-convenience tag; not parsed for authz
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp last_used_at = 9;
+  google.protobuf.Timestamp expires_at = 10;
+  string plaintext_token = 11; // set only by CreateKey; empty otherwise
+}
+
+message CreateKeyRequest {
+  string name = 1;
+  string note = 2;
+  repeated Statement statements = 3;
+  RateLimitConfig rate_limits = 4;
+  bool disabled = 5;
+  string owner_namespace = 6;
+  google.protobuf.Timestamp expires_at = 7;
+}
+
+message ListKeysRequest {
+  bool include_disabled = 1;
+  string owner_namespace = 2; // optional filter
+}
+
+message ListKeysResponse {
+  repeated Key keys = 1;
+}
+
+message GetKeyRequest {
+  string id = 1;
+}
+
+// UpdateKeyRequest applies a partial update. Scalar fields use proto3 optional
+// (absent = leave unchanged). statements and rate_limits use message presence
+// (absent = leave unchanged; present = replace). Expiry has an explicit
+// clear_expiry to distinguish "remove expiry" from "leave unchanged".
+message UpdateKeyRequest {
+  string id = 1;
+  optional string name = 2;
+  optional string note = 3;
+  optional bool disabled = 4;
+  optional string owner_namespace = 5;
+  StatementList statements = 6; // absent = leave unchanged; present = replace
+  // rate_limits: absent = leave unchanged; present = replace wholesale. Note an
+  // empty message ({}) is "present" and replaces the key's overrides with none
+  // (so the key falls back to the global per-key defaults) — it does NOT mean
+  // "leave unchanged".
+  RateLimitConfig rate_limits = 7;
+  google.protobuf.Timestamp expires_at = 8; // present = set expiry to this
+  bool clear_expiry = 9; // true = remove any expiry (exclusive with expires_at)
+}
+
+message DeleteKeyRequest {
+  string id = 1;
+}
+
+// ---- Global policy ----
+
+// Policy is the singleton global service policy: a deny-only ceiling evaluated
+// before every key's statements, plus the rate-limit configuration. version
+// supports optimistic concurrency on UpdatePolicy.
+message Policy {
+  repeated Statement statements = 1;
+  RateLimits rate_limits = 2;
+  int64 version = 3;
+  google.protobuf.Timestamp updated_at = 4;
+  string updated_by = 5;
+}
+
+message GetPolicyRequest {}
+
+message UpdatePolicyRequest {
+  repeated Statement statements = 1;
+  RateLimits rate_limits = 2;
+  int64 expected_version = 3; // must match the stored version or the update fails
+}
+
+// ---- Hot path ----
+
+message CheckRequest {
+  string client_token = 1; // the API key presented by the end user/agent
+  string action = 2; // service-namespaced, e.g. "beeper:sendMessage"
+  // resources identifies the target object; e.g. ["beeper:chat:!abc"]. Matched
+  // as OR (a statement matches if any resource matches). At least one resource
+  // is REQUIRED: a statement matches a resource pattern, so a Check with no
+  // resources always evaluates to a deny — even under an allow-all key. Actions
+  // that don't name a concrete object should pass a stable synthetic resource
+  // (e.g. "beeper:account:wa123" or a "svc:*"-style capability resource).
+  repeated string resources = 3;
+  bool count_rate_limit = 4; // consume budget (only when authn + authz pass)
+}
+
+message CheckResponse {
+  bool allowed = 1;
+  Principal principal = 2;
+  Decision decision = 3;
+  RateLimitVerdict rate_limit = 4;
+}
+
+enum Decision {
+  ALLOWED = 0;
+  UNAUTHENTICATED = 1;
+  POLICY_DENIED = 2;
+  RATE_LIMITED = 3;
+}
+
+message RateLimitVerdict {
+  bool limited = 1;
+  int64 retry_after_ms = 2;
+}
+
+message Principal {
+  string key_id = 1;
+  string name = 2;
+  string note = 3;
+}
+
+message AuthenticateRequest {
+  string client_token = 1;
+}
+
+// ---- Audit ----
+
+message AuditEntry {
+  string api_key_id = 1;
+  string api_key_name = 2; // denormalized; survives rename/delete
+  string method = 3; // "REST"|"MCP"|… (host-defined)
+  string path = 4;
+  string action = 5; // namespaced
+  string resource = 6;
+  string request_summary = 7; // non-sensitive; never message text
+  int32 response_status = 8;
+  int64 latency_ms = 9;
+  google.protobuf.Timestamp timestamp = 10;
+}
+
+message ReportAuditSummary {
+  int64 accepted = 1;
+}
+
+message QueryAuditRequest {
+  string api_key_id = 1; // exact key id
+  string method = 2; // exact method
+  string path_prefix = 3; // path prefix match
+  string action_prefix = 4; // action-namespace prefix match (e.g. "beeper:")
+  int32 status = 5; // exact response status
+  google.protobuf.Timestamp after = 6; // entries at or after
+  google.protobuf.Timestamp before = 7; // entries at or before
+  int32 limit = 8; // page size
+  int64 cursor = 9; // keyset cursor: return entries with id < cursor
+}
+
+message QueryAuditResponse {
+  repeated AuditEntry entries = 1;
+  int64 next_cursor = 2; // pass as cursor for the next page; 0 when exhausted
+}

@@ -1,0 +1,17 @@
+# Compiled binary
+/turnstile
+
+# SQLite database and its WAL/SHM sidecars
+*.db
+*.db-wal
+*.db-shm
+
+# Local environment
+.env
+
+# air hot-reload artifacts
+/tmp/
+build-errors.log
+
+# Go build cache dir (if any)
+/build/

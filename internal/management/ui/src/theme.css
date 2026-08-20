@@ -1,0 +1,49 @@
+/* App-specific styles layered on Ionic's theme. Kept minimal — prefer Ionic
+   components and CSS variables over bespoke rules. */
+
+.login-card {
+  max-width: 440px;
+  margin: 10vh auto 0;
+}
+
+/* Monospace token reveal shown once after CreateKey. */
+.token-reveal {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  word-break: break-all;
+  background: var(--ion-color-step-100, rgba(0, 0, 0, 0.06));
+  border-radius: 8px;
+  padding: 12px;
+  margin: 8px 0;
+  user-select: all;
+}
+
+/* Statement / rate-limit editor rows. */
+.editor-row {
+  border: 1px solid var(--ion-color-step-150, rgba(0, 0, 0, 0.1));
+  border-radius: 8px;
+  margin: 8px 0;
+  padding: 4px 8px;
+}
+
+.audit-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.muted {
+  color: var(--ion-color-medium);
+  font-size: 0.85em;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85em;
+}
+
+.chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
