@@ -22,12 +22,12 @@ import StatementsEditor, {
   toStatements,
   type DraftStatement,
 } from "./StatementsEditor";
-import RateLimitEditor, {
-  emptyRateLimit,
-  fromRateLimit,
-  toRateLimit,
-  type DraftRateLimit,
-} from "./RateLimitEditor";
+import PerActionLimitsEditor, {
+  emptyPerActionLimits,
+  fromPerActionLimits,
+  toPerActionLimits,
+  type DraftPerActionLimits,
+} from "./PerActionLimitsEditor";
 
 // toLocalInput converts an RFC3339 timestamp to a value for datetime-local.
 function toLocalInput(ts?: string): string {
@@ -51,14 +51,13 @@ export default function KeyEditor({ isOpen, existing, onClose, onSaved }: Props)
   const editing = !!existing;
   const [name, setName] = useState(existing?.name ?? "");
   const [note, setNote] = useState(existing?.note ?? "");
-  const [ownerNamespace, setOwnerNamespace] = useState(existing?.ownerNamespace ?? "");
   const [disabled, setDisabled] = useState(existing?.disabled ?? false);
   const [expiresLocal, setExpiresLocal] = useState(toLocalInput(existing?.expiresAt));
   const [statements, setStatements] = useState<DraftStatement[]>(
     existing ? fromStatements(existing.statements) : [emptyDraft()],
   );
-  const [rateLimit, setRateLimit] = useState<DraftRateLimit>(
-    existing ? fromRateLimit(existing.rateLimits) : emptyRateLimit(),
+  const [rateLimit, setRateLimit] = useState<DraftPerActionLimits>(
+    existing ? fromPerActionLimits(existing.rateLimits) : emptyPerActionLimits(),
   );
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -74,7 +73,7 @@ export default function KeyEditor({ isOpen, existing, onClose, onSaved }: Props)
       setError("At least one statement is required.");
       return;
     }
-    const limits = toRateLimit(rateLimit);
+    const limits = toPerActionLimits(rateLimit);
     if (limits === null) {
       setError("Rate limits must be non-negative numbers.");
       return;
@@ -89,11 +88,13 @@ export default function KeyEditor({ isOpen, existing, onClose, onSaved }: Props)
           id: existing!.id,
           name,
           note,
-          ownerNamespace,
           disabled,
           statements: { statements: stmts },
-          rateLimits: limits ?? {},
         };
+        // rate_limits is a presence-less map: send it to replace, or
+        // clearRateLimits to remove all overrides.
+        if (limits) req.rateLimits = limits;
+        else req.clearRateLimits = true;
         if (expiresAt) req.expiresAt = expiresAt;
         else req.clearExpiry = true;
         saved = await API.updateKey(req);
@@ -101,7 +102,6 @@ export default function KeyEditor({ isOpen, existing, onClose, onSaved }: Props)
         const req: CreateKeyRequest = {
           name,
           note: note || undefined,
-          ownerNamespace: ownerNamespace || undefined,
           disabled,
           statements: stmts,
           rateLimits: limits,
@@ -141,13 +141,6 @@ export default function KeyEditor({ isOpen, existing, onClose, onSaved }: Props)
           onIonInput={(e) => setNote(e.detail.value ?? "")}
         />
         <IonInput
-          label="Owner namespace (optional tag)"
-          labelPlacement="stacked"
-          placeholder="beeper"
-          value={ownerNamespace}
-          onIonInput={(e) => setOwnerNamespace(e.detail.value ?? "")}
-        />
-        <IonInput
           label="Expires at (optional)"
           labelPlacement="stacked"
           type="datetime-local"
@@ -173,9 +166,10 @@ export default function KeyEditor({ isOpen, existing, onClose, onSaved }: Props)
           <h3>Rate-limit overrides (optional)</h3>
         </IonLabel>
         <IonNote className="muted">
-          Overrides the instance per-key defaults for this key. Leave blank to inherit.
+          Per-action overrides of the instance per-key defaults for this key. Leave empty to
+          inherit.
         </IonNote>
-        <RateLimitEditor label="This key's limits" value={rateLimit} onChange={setRateLimit} />
+        <PerActionLimitsEditor value={rateLimit} onChange={setRateLimit} />
 
         {error && (
           <IonText color="danger">

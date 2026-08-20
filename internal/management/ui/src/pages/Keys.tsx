@@ -170,8 +170,7 @@ function KeyCard({ k, onEdit, onDelete }: { k: Key; onEdit: () => void; onDelete
     <IonCard>
       <IonCardHeader>
         <IonCardTitle>
-          {k.name} {k.disabled && <IonBadge color="medium">disabled</IonBadge>}{" "}
-          {k.ownerNamespace && <IonBadge color="tertiary">{k.ownerNamespace}</IonBadge>}
+          {k.name} {k.disabled && <IonBadge color="medium">disabled</IonBadge>}
         </IonCardTitle>
         <IonCardSubtitle className="mono">{k.id}</IonCardSubtitle>
       </IonCardHeader>
@@ -187,20 +186,17 @@ function KeyCard({ k, onEdit, onDelete }: { k: Key; onEdit: () => void; onDelete
         </IonLabel>
         {(k.statements ?? []).map((s, i) => (
           <div className="mono" key={i}>
-            {s.effect === "EFFECT_DENY" ? "deny" : "allow"} {(s.actions ?? []).join(", ")} on{" "}
+            {s.effect === "DENY" ? "deny" : "allow"} {(s.actions ?? []).join(", ")} on{" "}
             {(s.resources ?? []).join(", ")}
           </div>
         ))}
 
-        {(k.rateLimits?.default || k.rateLimits?.perAction) && (
+        {k.rateLimits && Object.keys(k.rateLimits).length > 0 && (
           <>
             <IonLabel className="ion-margin-top">
               <strong>Rate-limit overrides</strong>
             </IonLabel>
-            {k.rateLimits?.default && (
-              <div className="mono">default: {fmtLimit(k.rateLimits.default)}</div>
-            )}
-            {Object.entries(k.rateLimits?.perAction ?? {}).map(([a, l]) => (
+            {Object.entries(k.rateLimits).map(([a, l]) => (
               <div className="mono" key={a}>
                 {a}: {fmtLimit(l)}
               </div>

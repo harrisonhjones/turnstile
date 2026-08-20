@@ -107,7 +107,7 @@ export default function Audit() {
               <IonInput
                 label="Action prefix"
                 labelPlacement="stacked"
-                placeholder="beeper:"
+                placeholder="photos:"
                 value={filters.actionPrefix}
                 onIonInput={(e) => set({ actionPrefix: e.detail.value ?? "" })}
               />

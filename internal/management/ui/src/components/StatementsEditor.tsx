@@ -12,7 +12,7 @@ export interface DraftStatement {
   note: string;
 }
 
-export function emptyDraft(effect: Effect = "EFFECT_ALLOW"): DraftStatement {
+export function emptyDraft(effect: Effect = "ALLOW"): DraftStatement {
   return { effect, actions: "", resources: "", note: "" };
 }
 
@@ -52,7 +52,7 @@ export default function StatementsEditor({ drafts, onChange, denyOnly }: Props) 
   const update = (i: number, patch: Partial<DraftStatement>) =>
     onChange(drafts.map((d, j) => (j === i ? { ...d, ...patch } : d)));
   const remove = (i: number) => onChange(drafts.filter((_, j) => j !== i));
-  const add = () => onChange([...drafts, emptyDraft(denyOnly ? "EFFECT_DENY" : "EFFECT_ALLOW")]);
+  const add = () => onChange([...drafts, emptyDraft(denyOnly ? "DENY" : "ALLOW")]);
 
   return (
     <div>
@@ -68,8 +68,8 @@ export default function StatementsEditor({ drafts, onChange, denyOnly }: Props) 
                 interface="popover"
                 onIonChange={(e) => update(i, { effect: e.detail.value as Effect })}
               >
-                <IonSelectOption value="EFFECT_ALLOW">allow</IonSelectOption>
-                <IonSelectOption value="EFFECT_DENY">deny</IonSelectOption>
+                <IonSelectOption value="ALLOW">allow</IonSelectOption>
+                <IonSelectOption value="DENY">deny</IonSelectOption>
               </IonSelect>
             )}
             <IonButton fill="clear" color="danger" onClick={() => remove(i)}>
@@ -79,14 +79,14 @@ export default function StatementsEditor({ drafts, onChange, denyOnly }: Props) 
           <IonInput
             label="Actions"
             labelPlacement="stacked"
-            placeholder="beeper:sendMessage, beeper:read*"
+            placeholder="photos:getAlbum, photos:list*"
             value={d.actions}
             onIonInput={(e) => update(i, { actions: e.detail.value ?? "" })}
           />
           <IonInput
             label="Resources"
             labelPlacement="stacked"
-            placeholder="beeper:chat:!abc, beeper:*"
+            placeholder="photos:album:a1b2, photos:*"
             value={d.resources}
             onIonInput={(e) => update(i, { resources: e.detail.value ?? "" })}
           />

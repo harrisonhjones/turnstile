@@ -100,7 +100,7 @@ export default function RateLimitEditor({
           <IonInput
             label="Action"
             labelPlacement="stacked"
-            placeholder="beeper:sendMessage"
+            placeholder="photos:getAlbum"
             value={r.action}
             onIonInput={(e) => setRow(i, { action: e.detail.value ?? "" })}
           />

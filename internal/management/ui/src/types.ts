@@ -2,7 +2,7 @@
 // (camelCase field names, enums as strings). These are the shapes exchanged over
 // the Connect HTTP/JSON protocol; see api.ts.
 
-export type Effect = "EFFECT_ALLOW" | "EFFECT_DENY";
+export type Effect = "ALLOW" | "DENY";
 
 export interface Statement {
   effect: Effect;
@@ -26,14 +26,17 @@ export interface RateLimits {
   serviceWide?: RateLimitConfig;
 }
 
+// PerActionLimits is a key's own rate-limit overrides: a plain action→Limit map.
+// (Unlike the global policy's RateLimitConfig, a key has no blanket default.)
+export type PerActionLimits = Record<string, Limit>;
+
 export interface Key {
   id: string;
   name: string;
   note?: string;
   statements?: Statement[];
-  rateLimits?: RateLimitConfig;
+  rateLimits?: PerActionLimits;
   disabled?: boolean;
-  ownerNamespace?: string;
   createdAt?: string; // RFC3339
   lastUsedAt?: string;
   expiresAt?: string;
@@ -44,9 +47,8 @@ export interface CreateKeyRequest {
   name: string;
   note?: string;
   statements?: Statement[];
-  rateLimits?: RateLimitConfig;
+  rateLimits?: PerActionLimits;
   disabled?: boolean;
-  ownerNamespace?: string;
   expiresAt?: string;
 }
 
@@ -55,11 +57,11 @@ export interface UpdateKeyRequest {
   name?: string;
   note?: string;
   disabled?: boolean;
-  ownerNamespace?: string;
   statements?: { statements: Statement[] };
-  rateLimits?: RateLimitConfig;
+  rateLimits?: PerActionLimits;
   expiresAt?: string;
   clearExpiry?: boolean;
+  clearRateLimits?: boolean;
 }
 
 export interface ListKeysResponse {

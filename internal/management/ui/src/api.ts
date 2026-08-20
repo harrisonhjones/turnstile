@@ -87,11 +87,8 @@ function safeParse(text: string): Record<string, unknown> {
 export const API = {
   createKey: (req: CreateKeyRequest) => connectRPC<CreateKeyRequest, Key>("CreateKey", req),
 
-  listKeys: (includeDisabled: boolean, ownerNamespace?: string) =>
-    connectRPC<{ includeDisabled: boolean; ownerNamespace?: string }, ListKeysResponse>(
-      "ListKeys",
-      { includeDisabled, ownerNamespace: ownerNamespace || undefined },
-    ),
+  listKeys: (includeDisabled: boolean) =>
+    connectRPC<{ includeDisabled: boolean }, ListKeysResponse>("ListKeys", { includeDisabled }),
 
   getKey: (id: string) => connectRPC<{ id: string }, Key>("GetKey", { id }),
 
