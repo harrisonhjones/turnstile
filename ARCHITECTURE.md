@@ -138,18 +138,46 @@ short-lived `HttpOnly`+`Secure`+`SameSite` session cookie.
 ## Persistence
 
 SQLite via the pure-Go `modernc.org/sqlite` driver. Connection pragmas
-(`busy_timeout`, `foreign_keys`, `journal_mode=WAL`, `_txlock=immediate`) are
-applied through the DSN so they take effect on every pooled connection.
-Read-modify-write on a key (`UpdateAPIKeyFunc`) runs in a single
-`BEGIN IMMEDIATE` transaction to close the lost-update window; the global policy
-uses an optimistic version check.
+(`auto_vacuum=INCREMENTAL`, `busy_timeout`, `foreign_keys`, `journal_mode=WAL`,
+`_txlock=immediate`) are applied through the DSN so they take effect on every
+pooled connection. Read-modify-write on a key (`UpdateAPIKeyFunc`) runs in a
+single `BEGIN IMMEDIATE` transaction to close the lost-update window; the global
+policy uses an optimistic version check.
+
+Audit rows are bounded by the retention loop (delete older than
+`AUDIT_RETENTION_DAYS`); because a SQLite `DELETE` only frees pages for reuse,
+retention then calls `PRAGMA incremental_vacuum` (enabled by the
+`auto_vacuum=INCREMENTAL` pragma, set before the schema is created) to return the
+freed pages to the OS rather than leaving the file at its high-water mark. Audit
+timestamps are stored as epoch-nanosecond INTEGERs so time-range filters and
+retention compare chronologically (a lexical TEXT compare of RFC3339 is wrong at
+sub-second boundaries).
 
 ## Graceful shutdown
 
-On SIGINT/SIGTERM the server stops the retention loop, calls `Server.Shutdown`
-(which lets in-flight handlers finish), then drains the audit writer's
-background writes **before** the deferred `db.Close`, so last-request entries
-aren't lost to a closing database.
+`http.Server.Shutdown` alone is insufficient here: without TLS the gRPC hot path
+runs over `h2c` on a **hijacked** connection, which `Shutdown` neither tracks nor
+drains, so it can return while `Check`/`ReportAudit` handlers are still running.
+A `ShutdownGate` (a Connect interceptor, `internal/server/shutdown.go`) closes
+that gap.
+
+On SIGINT/SIGTERM the sequence is:
+
+1. Stop the background loops (audit retention, rate-limiter eviction).
+2. `gate.Quiesce(timeout)` — stop accepting new RPCs (new calls get
+   `Unavailable`), cancel the in-flight handlers' contexts (so a long-lived
+   `ReportAudit` stream unwinds instead of waiting on the client), and wait for
+   in-flight calls to drain, **bounded** by the timeout. The wait can never hang
+   on a stuck or hostile client; if it elapses, shutdown proceeds anyway and at
+   worst a few best-effort audit writes are lost.
+3. `srv.Shutdown` — stop the listener and close idle tracked connections.
+4. Drain the audit writer's queue (`Writer.Wait`) **before** the deferred
+   `db.Close`, so buffered entries aren't lost to a closing database.
+
+The gate counts in-flight requests with an increment-before-check step that
+pairs with `Quiesce` storing "not accepting" before reading the count, so an
+admitted request is always observed by the drain (no check-then-close race
+against `db.Close`).
 
 ## Out of scope (deliberately)
 

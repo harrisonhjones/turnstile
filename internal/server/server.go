@@ -45,8 +45,9 @@ const (
 
 // maxReportAuditEntries bounds how many entries a single ReportAudit call may
 // stream, so one client can't hold an unbounded intake open. A host that has
-// more buffered should split them across calls.
-const maxReportAuditEntries = 10000
+// more buffered should split them across calls. It is a var (not a const) only
+// so tests can lower it.
+var maxReportAuditEntries = 10000
 
 // Deps are the collaborators a Handler needs.
 type Deps struct {
@@ -211,7 +212,7 @@ func (h *Handler) ReportAudit(ctx context.Context, stream *connect.ClientStream[
 	}
 	var accepted int64
 	for stream.Receive() {
-		if accepted >= maxReportAuditEntries {
+		if accepted >= int64(maxReportAuditEntries) {
 			return nil, connect.NewError(connect.CodeResourceExhausted,
 				fmt.Errorf("ReportAudit accepts at most %d entries per call; split into multiple calls", maxReportAuditEntries))
 		}
@@ -219,8 +220,11 @@ func (h *Handler) ReportAudit(ctx context.Context, stream *connect.ClientStream[
 		if entry.Timestamp.IsZero() {
 			entry.Timestamp = h.now()
 		}
-		h.auditWriter.Write(entry)
-		accepted++
+		// Count only entries the writer actually accepted, so the returned total
+		// never over-reports (e.g. an entry dropped because shutdown began).
+		if h.auditWriter.Write(entry) {
+			accepted++
+		}
 	}
 	if err := stream.Err(); err != nil && !errors.Is(err, io.EOF) {
 		return nil, connect.NewError(connect.CodeInternal, err)

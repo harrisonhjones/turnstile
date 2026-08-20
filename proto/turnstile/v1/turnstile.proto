@@ -165,6 +165,17 @@ message Policy {
 
 message GetPolicyRequest {}
 
+// UpdatePolicyRequest REPLACES the entire global policy (PUT semantics), unlike
+// UpdateKey's partial update. Both fields are written wholesale, with NO
+// "leave unchanged" option:
+//   - omitting statements clears the deny-only ceiling (an empty ceiling is
+//     valid — it just imposes no restrictions);
+//   - omitting rate_limits clears ALL rate limiting (per-key defaults AND the
+//     service-wide cap).
+// The intended workflow is read-modify-write: fetch the current policy with
+// GetPolicy, change what you need, and send the whole thing back. Because you
+// already need the current version for expected_version (the optimistic-
+// concurrency guard — a mismatch fails the update), fetching first is natural.
 message UpdatePolicyRequest {
   repeated Statement statements = 1;
   RateLimits rate_limits = 2;

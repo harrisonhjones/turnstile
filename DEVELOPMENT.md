@@ -31,8 +31,8 @@ whole project, just the Go backend, or just the web UI:
 | `run:ui` | Vite dev server for the UI (proxies the API to the backend). |
 | `fmt:all` / `fmt:backend` / `fmt:ui` | gofmt / oxfmt. |
 | `vet:all` / `vet:backend` / `vet:ui` | `go vet` (+ golangci-lint if installed) / oxlint. |
-| `test:unit` | `go test ./...`. |
-| `test:integration` | End-to-end tests over an in-process server. |
+| `test:unit` | `go test ./...` — includes the end-to-end tests that run the service over an in-process Connect client (`internal/server`). |
+| `test:integration` | Runs tests behind the `integration` build tag (for external-dependency tests). Placeholder — none defined yet, so it currently runs nothing. |
 | `check` | The CI gate: `vet:backend` then `test:unit`. |
 | `clean:all` / `clean:backend` / `clean:ui` | Remove build artifacts. |
 | `resetDB` | Delete the SQLite file + WAL/SHM sidecars (honors `DB_PATH`). |

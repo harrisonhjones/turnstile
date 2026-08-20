@@ -142,10 +142,13 @@ func (Test) Unit() error {
 	return sh.RunV("go", "test", "./...")
 }
 
-// Integration runs the integration tests (end-to-end over an in-process
-// server). They are ordinary Go tests behind the `integration` build tag.
+// Integration runs tests behind the `integration` build tag — reserved for
+// tests that need external dependencies. There are none yet (this is a
+// placeholder), so it currently runs nothing. The end-to-end tests that exercise
+// the service over an in-process Connect client are ordinary unit tests in
+// internal/server and run under `test:unit`.
 func (Test) Integration() error {
-	fmt.Println("running integration tests")
+	fmt.Println("running integration tests (build tag `integration`; none defined yet)")
 	return sh.RunV("go", "test", "-tags", "integration", "./...", "-run", "Integration", "-v")
 }
 

@@ -16,8 +16,8 @@ CREATE TABLE IF NOT EXISTS api_keys (
     expires_at      TEXT,
     disabled        INTEGER NOT NULL DEFAULT 0
 );
-
-CREATE INDEX IF NOT EXISTS idx_api_keys_key_hash ON api_keys (key_hash);
+-- No explicit index on key_hash: the UNIQUE constraint already creates one, and
+-- lookups are by key_hash, so a second index would only add write cost.
 
 -- Admin credentials guard the management RPCs. Like API keys, only the SHA-256
 -- hash of the credential is stored. First start against an empty DB seeds a
@@ -32,8 +32,8 @@ CREATE TABLE IF NOT EXISTS admin_credentials (
     created_at   TEXT NOT NULL,
     last_used_at TEXT
 );
-
-CREATE INDEX IF NOT EXISTS idx_admin_cred_hash ON admin_credentials (cred_hash);
+-- As with api_keys.key_hash, the UNIQUE(cred_hash) constraint already provides
+-- the lookup index; no separate index is needed.
 
 -- Global service policy. Single row enforced via the fixed id = 1. statements is
 -- a deny-only ceiling; constraints is a JSON document holding rate limits.

@@ -179,6 +179,34 @@ func TestServiceEndToEnd(t *testing.T) {
 	}
 }
 
+// TestReportAuditCap verifies ReportAudit rejects a stream past the entry cap
+// with ResourceExhausted, while the entries accepted before the cap persist.
+func TestReportAuditCap(t *testing.T) {
+	orig := maxReportAuditEntries
+	maxReportAuditEntries = 3
+	t.Cleanup(func() { maxReportAuditEntries = orig })
+
+	env := newTestEnv(t)
+	ctx := context.Background()
+
+	stream := env.client.ReportAudit(ctx)
+	for i := 0; i < maxReportAuditEntries+1; i++ {
+		if err := stream.Send(&turnstilev1.AuditEntry{
+			ApiKeyId: "k", ApiKeyName: "n", Method: "REST", Path: "/x", Action: "svc:read", ResponseStatus: 200,
+		}); err != nil {
+			// The server may close the stream once the cap is hit; a Send error
+			// here is expected — stop sending and read the final status.
+			break
+		}
+	}
+	if _, err := stream.CloseAndReceive(); connect.CodeOf(err) != connect.CodeResourceExhausted {
+		t.Fatalf("expected ResourceExhausted past the cap, got %v", connect.CodeOf(err))
+	}
+
+	// The entries accepted before the cap should have been persisted.
+	waitForAudit(t, env, maxReportAuditEntries)
+}
+
 func TestRateLimitDoesNotBurnOnDeny(t *testing.T) {
 	env := newTestEnv(t)
 	ctx := context.Background()

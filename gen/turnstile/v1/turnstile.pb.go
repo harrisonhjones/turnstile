@@ -1039,6 +1039,18 @@ func (*GetPolicyRequest) Descriptor() ([]byte, []int) {
 	return file_turnstile_v1_turnstile_proto_rawDescGZIP(), []int{13}
 }
 
+// UpdatePolicyRequest REPLACES the entire global policy (PUT semantics), unlike
+// UpdateKey's partial update. Both fields are written wholesale, with NO
+// "leave unchanged" option:
+//   - omitting statements clears the deny-only ceiling (an empty ceiling is
+//     valid — it just imposes no restrictions);
+//   - omitting rate_limits clears ALL rate limiting (per-key defaults AND the
+//     service-wide cap).
+//
+// The intended workflow is read-modify-write: fetch the current policy with
+// GetPolicy, change what you need, and send the whole thing back. Because you
+// already need the current version for expected_version (the optimistic-
+// concurrency guard — a mismatch fails the update), fetching first is natural.
 type UpdatePolicyRequest struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	Statements      []*Statement           `protobuf:"bytes,1,rep,name=statements,proto3" json:"statements,omitempty"`

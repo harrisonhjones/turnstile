@@ -37,8 +37,10 @@ cd turnstile
 # Backend-only build — no extra tooling; serves the UI placeholder page:
 go build -o turnstile ./cmd/turnstile && ./turnstile
 
-# Or the full build (protos + web UI + binary), which needs mage
-# (`go install github.com/magefile/mage@latest`):
+# Or the full build (regenerate protos + build the web UI + binary). This needs
+# extra tooling — mage, buf + protoc-gen-go + protoc-gen-connect-go, and Node —
+# see DEVELOPMENT.md. Not required just to run the service: the stubs are
+# committed and a UI placeholder ships, so the `go build` above is enough.
 mage build:all && ./turnstile
 ```
 

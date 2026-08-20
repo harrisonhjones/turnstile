@@ -84,6 +84,13 @@ curl -sS http://localhost:8080/turnstile.v1.Turnstile/UpdatePolicy \
 `expectedVersion` is the optimistic-concurrency guard: pass the `version` you
 last read from `GetPolicy`; a mismatch returns `aborted`.
 
+> **`UpdatePolicy` replaces the whole policy (PUT semantics), not a patch.** Both
+> `statements` and `rateLimits` are written wholesale, with no "leave unchanged"
+> option: omit `rateLimits` and you clear **all** rate limiting; omit
+> `statements` and you clear the deny ceiling. Always base the request on a fresh
+> `GetPolicy` (which you need anyway for `expectedVersion`) and send the full,
+> modified policy back — don't hand-write a partial body.
+
 ## The hot path with curl
 
 ```sh

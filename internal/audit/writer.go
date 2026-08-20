@@ -42,15 +42,30 @@ func NewWriter(s *store.Store) *Writer {
 	return w
 }
 
-// Write enqueues an entry for the background consumer. It applies backpressure
-// when the queue is full (blocking the caller), but never blocks past shutdown:
-// once Wait has signaled stopping, a Write that can't be enqueued is dropped
-// with a log line rather than deadlocking.
-func (w *Writer) Write(e *store.AuditEntry) {
+// Write enqueues an entry for the background consumer and reports whether it was
+// accepted. It applies backpressure when the queue is full (blocking the
+// caller), but never blocks past shutdown: once Wait has signaled stopping, the
+// entry is dropped (with a log line) and Write returns false rather than
+// deadlocking or enqueuing into a channel whose consumer has exited.
+//
+// The stopping check is prioritized (a non-blocking pre-check) so that once
+// shutdown has begun, Write deterministically drops rather than racing the
+// consumer's drain. In the server, the ShutdownGate quiesces all handlers before
+// Wait is called, so no Write races shutdown in practice; this just makes the
+// primitive safe on its own.
+func (w *Writer) Write(e *store.AuditEntry) bool {
 	select {
-	case w.ch <- e:
 	case <-w.stopping:
 		slog.Warn("audit writer stopping; dropping entry", "api_key_id", e.APIKeyID)
+		return false
+	default:
+	}
+	select {
+	case w.ch <- e:
+		return true
+	case <-w.stopping:
+		slog.Warn("audit writer stopping; dropping entry", "api_key_id", e.APIKeyID)
+		return false
 	}
 }
 
