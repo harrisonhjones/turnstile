@@ -68,7 +68,6 @@ curl -sS http://localhost:8080/turnstile.v1.Turnstile/CreateKey \
   -d '{
     "name": "photos-reader",
     "note": "read-only access for the reporting job",
-    "ownerNamespace": "photos",
     "statements": [
       { "effect": "ALLOW", "actions": ["photos:listAlbums", "photos:getAlbum"], "resources": ["photos:*"] }
     ],
@@ -81,20 +80,16 @@ host/client; only the hash is persisted, so it can never be shown again. (See
 [CLIENT-INTEGRATION.md](CLIENT-INTEGRATION.md#namespacing) for how to choose the
 action/resource strings in `statements`.)
 
-A statement's `effect` is `ALLOW` or `DENY`. A key's `rateLimits` is a plain
-map of `action → limit` (per-action overrides only; the baseline comes from the
-global policy's per-key defaults). `ownerNamespace` is an **optional
-organizational label** — it records which team or service owns the key so you
-can filter `ListKeys` and group keys in the console. It is never used for
-authorization (isolation between projects comes from the action/resource
-namespacing, not this tag), so it can be any string or left empty.
+A statement's `effect` is `ALLOW` or `DENY`. `note` is a free-form human label
+for the key. A key's `rateLimits` is a plain map of `action → limit` (per-action
+overrides only; the baseline comes from the global policy's per-key defaults).
 
 Other key operations (all admin-gated):
 
 ```sh
-# List keys (omit includeDisabled to hide disabled ones; ownerNamespace filters).
+# List keys (omit includeDisabled to hide disabled ones).
 curl -sS .../ListKeys   -H "Authorization: Bearer $ADMIN_TOKEN" \
-  -H "Content-Type: application/json" -d '{"includeDisabled": true, "ownerNamespace": "photos"}'
+  -H "Content-Type: application/json" -d '{"includeDisabled": true}'
 
 # Fetch one key.
 curl -sS .../GetKey     -H "Authorization: Bearer $ADMIN_TOKEN" \

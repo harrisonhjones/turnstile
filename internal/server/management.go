@@ -57,16 +57,15 @@ func (h *Handler) CreateKey(ctx context.Context, req *connect.Request[turnstilev
 	}
 
 	k := &store.APIKey{
-		ID:             token.NewID("key"),
-		Name:           r.Name,
-		KeyHash:        hash,
-		Statements:     statements,
-		RateLimits:     limits,
-		Note:           r.Note,
-		OwnerNamespace: r.OwnerNamespace,
-		CreatedAt:      h.now(),
-		ExpiresAt:      timePtrFromPB(r.ExpiresAt),
-		Disabled:       r.Disabled,
+		ID:         token.NewID("key"),
+		Name:       r.Name,
+		KeyHash:    hash,
+		Statements: statements,
+		RateLimits: limits,
+		Note:       r.Note,
+		CreatedAt:  h.now(),
+		ExpiresAt:  timePtrFromPB(r.ExpiresAt),
+		Disabled:   r.Disabled,
 	}
 	if err := h.store.CreateAPIKey(ctx, k); err != nil {
 		return nil, storeErr(err)
@@ -83,7 +82,7 @@ func (h *Handler) ListKeys(ctx context.Context, req *connect.Request[turnstilev1
 	if _, err := h.requireAdmin(ctx, req.Header()); err != nil {
 		return nil, err
 	}
-	keys, err := h.store.ListAPIKeys(ctx, req.Msg.IncludeDisabled, req.Msg.OwnerNamespace)
+	keys, err := h.store.ListAPIKeys(ctx, req.Msg.IncludeDisabled)
 	if err != nil {
 		return nil, storeErr(err)
 	}
@@ -141,9 +140,6 @@ func (h *Handler) UpdateKey(ctx context.Context, req *connect.Request[turnstilev
 		}
 		if r.Disabled != nil {
 			k.Disabled = *r.Disabled
-		}
-		if r.OwnerNamespace != nil {
-			k.OwnerNamespace = *r.OwnerNamespace
 		}
 		if r.Statements != nil {
 			statements := statementsFromPB(r.Statements.Statements)

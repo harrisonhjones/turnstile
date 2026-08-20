@@ -1,8 +1,7 @@
 -- API keys (client tokens presented on the Check hot path). The token itself is
 -- never stored; only its SHA-256 hash. statements holds the key's policy as a
--- JSON array of policy.Statement; rate_limits is a JSON ratelimit.Config of the
--- key's own overrides. owner_namespace is a management-convenience tag only —
--- authorization keys off the namespaced action, never this field.
+-- JSON array of policy.Statement; rate_limits is a JSON action→Limit map of the
+-- key's per-action overrides. note is a free-form human label.
 CREATE TABLE IF NOT EXISTS api_keys (
     id              TEXT PRIMARY KEY,
     name            TEXT NOT NULL UNIQUE,
@@ -10,7 +9,6 @@ CREATE TABLE IF NOT EXISTS api_keys (
     statements      TEXT NOT NULL DEFAULT '[]',
     rate_limits     TEXT NOT NULL DEFAULT '{}',
     note            TEXT NOT NULL DEFAULT '',
-    owner_namespace TEXT NOT NULL DEFAULT '',
     created_at      TEXT NOT NULL,
     last_used_at    TEXT,
     expires_at      TEXT,

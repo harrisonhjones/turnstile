@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/harrisonhjones/turnstile/internal/policy"
@@ -16,17 +15,16 @@ import (
 // APIKey is a stored API key (a client token). The plaintext token is never
 // persisted.
 type APIKey struct {
-	ID             string
-	Name           string
-	KeyHash        string
-	Statements     []policy.Statement
-	RateLimits     ratelimit.PerActionLimits
-	Note           string
-	OwnerNamespace string
-	CreatedAt      time.Time
-	LastUsedAt     *time.Time
-	ExpiresAt      *time.Time
-	Disabled       bool
+	ID         string
+	Name       string
+	KeyHash    string
+	Statements []policy.Statement
+	RateLimits ratelimit.PerActionLimits
+	Note       string
+	CreatedAt  time.Time
+	LastUsedAt *time.Time
+	ExpiresAt  *time.Time
+	Disabled   bool
 }
 
 // Expired reports whether the key has an expiry in the past relative to now.
@@ -34,7 +32,7 @@ func (k *APIKey) Expired(now time.Time) bool {
 	return k.ExpiresAt != nil && now.After(*k.ExpiresAt)
 }
 
-const apiKeyColumns = `id, name, key_hash, statements, rate_limits, note, owner_namespace, created_at, last_used_at, expires_at, disabled`
+const apiKeyColumns = `id, name, key_hash, statements, rate_limits, note, created_at, last_used_at, expires_at, disabled`
 
 // CreateAPIKey inserts a new API key.
 func (s *Store) CreateAPIKey(ctx context.Context, k *APIKey) error {
@@ -47,9 +45,9 @@ func (s *Store) CreateAPIKey(ctx context.Context, k *APIKey) error {
 		return fmt.Errorf("marshal rate limits: %w", err)
 	}
 	_, err = s.db.ExecContext(ctx,
-		`INSERT INTO api_keys (id, name, key_hash, statements, rate_limits, note, owner_namespace, created_at, expires_at, disabled)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		k.ID, k.Name, k.KeyHash, string(stmts), string(limits), k.Note, k.OwnerNamespace,
+		`INSERT INTO api_keys (id, name, key_hash, statements, rate_limits, note, created_at, expires_at, disabled)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		k.ID, k.Name, k.KeyHash, string(stmts), string(limits), k.Note,
 		formatTime(&k.CreatedAt), formatTime(k.ExpiresAt), boolToInt(k.Disabled),
 	)
 	if isUniqueViolation(err) {
@@ -76,27 +74,15 @@ func (s *Store) GetAPIKeyByID(ctx context.Context, id string) (*APIKey, error) {
 	return scanAPIKey(row)
 }
 
-// ListAPIKeys returns keys, optionally including disabled ones and optionally
-// filtered to a single owner namespace (empty ownerNamespace = no filter).
-func (s *Store) ListAPIKeys(ctx context.Context, includeDisabled bool, ownerNamespace string) ([]*APIKey, error) {
+// ListAPIKeys returns keys, optionally including disabled ones.
+func (s *Store) ListAPIKeys(ctx context.Context, includeDisabled bool) ([]*APIKey, error) {
 	q := `SELECT ` + apiKeyColumns + ` FROM api_keys`
-	var (
-		where []string
-		args  []any
-	)
 	if !includeDisabled {
-		where = append(where, "disabled = 0")
-	}
-	if ownerNamespace != "" {
-		where = append(where, "owner_namespace = ?")
-		args = append(args, ownerNamespace)
-	}
-	if len(where) > 0 {
-		q += " WHERE " + strings.Join(where, " AND ")
+		q += ` WHERE disabled = 0`
 	}
 	q += ` ORDER BY created_at DESC`
 
-	rows, err := s.db.QueryContext(ctx, q, args...)
+	rows, err := s.db.QueryContext(ctx, q)
 	if err != nil {
 		return nil, fmt.Errorf("query api keys: %w", err)
 	}
@@ -159,9 +145,9 @@ func (s *Store) UpdateAPIKeyFunc(ctx context.Context, id string, mutate func(*AP
 		return nil, fmt.Errorf("marshal rate limits: %w", err)
 	}
 	_, err = tx.ExecContext(ctx,
-		`UPDATE api_keys SET name = ?, statements = ?, rate_limits = ?, note = ?, owner_namespace = ?, expires_at = ?, disabled = ?
+		`UPDATE api_keys SET name = ?, statements = ?, rate_limits = ?, note = ?, expires_at = ?, disabled = ?
 		 WHERE id = ?`,
-		key.Name, string(stmts), string(limits), key.Note, key.OwnerNamespace,
+		key.Name, string(stmts), string(limits), key.Note,
 		formatTime(key.ExpiresAt), boolToInt(key.Disabled), key.ID,
 	)
 	if isUniqueViolation(err) {
@@ -210,7 +196,7 @@ func scanAPIKey(sc scanner) (*APIKey, error) {
 		disabled      int
 	)
 	err := sc.Scan(&k.ID, &k.Name, &k.KeyHash, &statementsRaw, &rateLimitsRaw, &k.Note,
-		&k.OwnerNamespace, &createdAt, &lastUsedAt, &expiresAt, &disabled)
+		&createdAt, &lastUsedAt, &expiresAt, &disabled)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}

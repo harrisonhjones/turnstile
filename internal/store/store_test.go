@@ -28,14 +28,13 @@ func TestAPIKeyCRUD(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 
 	k := &APIKey{
-		ID:             "key_1",
-		Name:           "alpha",
-		KeyHash:        "hash1",
-		Statements:     []policy.Statement{{Effect: policy.Allow, Actions: []string{"svc:read"}, Resources: []string{"*"}}},
-		RateLimits:     ratelimit.PerActionLimits{"svc:read": {PerMinute: 10}},
-		Note:           "a note",
-		OwnerNamespace: "beeper",
-		CreatedAt:      now,
+		ID:         "key_1",
+		Name:       "alpha",
+		KeyHash:    "hash1",
+		Statements: []policy.Statement{{Effect: policy.Allow, Actions: []string{"svc:read"}, Resources: []string{"*"}}},
+		RateLimits: ratelimit.PerActionLimits{"svc:read": {PerMinute: 10}},
+		Note:       "a note",
+		CreatedAt:  now,
 	}
 	if err := s.CreateAPIKey(ctx, k); err != nil {
 		t.Fatalf("create: %v", err)
@@ -45,7 +44,7 @@ func TestAPIKeyCRUD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get by hash: %v", err)
 	}
-	if got.Name != "alpha" || got.OwnerNamespace != "beeper" || len(got.Statements) != 1 {
+	if got.Name != "alpha" || got.Note != "a note" || len(got.Statements) != 1 {
 		t.Errorf("round-trip mismatch: %+v", got)
 	}
 	if l, ok := got.RateLimits["svc:read"]; !ok || l.PerMinute != 10 {
@@ -74,25 +73,16 @@ func TestAPIKeyCRUD(t *testing.T) {
 	}
 
 	// List excludes disabled by default.
-	active, err := s.ListAPIKeys(ctx, false, "")
+	active, err := s.ListAPIKeys(ctx, false)
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
 	if len(active) != 0 {
 		t.Errorf("expected 0 active keys, got %d", len(active))
 	}
-	all, _ := s.ListAPIKeys(ctx, true, "")
+	all, _ := s.ListAPIKeys(ctx, true)
 	if len(all) != 1 {
 		t.Errorf("expected 1 key including disabled, got %d", len(all))
-	}
-	// Owner-namespace filter.
-	byOwner, _ := s.ListAPIKeys(ctx, true, "beeper")
-	if len(byOwner) != 1 {
-		t.Errorf("expected 1 key for owner beeper, got %d", len(byOwner))
-	}
-	none, _ := s.ListAPIKeys(ctx, true, "other")
-	if len(none) != 0 {
-		t.Errorf("expected 0 keys for owner other, got %d", len(none))
 	}
 
 	if err := s.DeleteAPIKey(ctx, "key_1"); err != nil {

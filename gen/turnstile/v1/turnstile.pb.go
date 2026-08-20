@@ -413,23 +413,17 @@ func (x *RateLimits) GetServiceWide() *RateLimitConfig {
 // SHA-256 hash. plaintext_token is populated ONLY in the CreateKey response and
 // is shown to the operator exactly once.
 type Key struct {
-	state      protoimpl.MessageState `protogen:"open.v1"`
-	Id         string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Name       string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Note       string                 `protobuf:"bytes,3,opt,name=note,proto3" json:"note,omitempty"`
-	Statements []*Statement           `protobuf:"bytes,4,rep,name=statements,proto3" json:"statements,omitempty"`
-	RateLimits map[string]*Limit      `protobuf:"bytes,5,rep,name=rate_limits,json=rateLimits,proto3" json:"rate_limits,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // per-action overrides: action -> limit
-	Disabled   bool                   `protobuf:"varint,6,opt,name=disabled,proto3" json:"disabled,omitempty"`
-	// owner_namespace is an optional, free-form organizational label recording who
-	// "owns" this key (a team or service name). It is a management convenience
-	// only — used to filter ListKeys and group keys in the console — and is NEVER
-	// parsed for authorization. Isolation between projects comes from action/
-	// resource namespacing (see Statement), not from this field.
-	OwnerNamespace string                 `protobuf:"bytes,7,opt,name=owner_namespace,json=ownerNamespace,proto3" json:"owner_namespace,omitempty"`
-	CreatedAt      *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	LastUsedAt     *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=last_used_at,json=lastUsedAt,proto3" json:"last_used_at,omitempty"`
-	ExpiresAt      *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
-	PlaintextToken string                 `protobuf:"bytes,11,opt,name=plaintext_token,json=plaintextToken,proto3" json:"plaintext_token,omitempty"` // set only by CreateKey; empty otherwise
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Id             string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name           string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Note           string                 `protobuf:"bytes,3,opt,name=note,proto3" json:"note,omitempty"`
+	Statements     []*Statement           `protobuf:"bytes,4,rep,name=statements,proto3" json:"statements,omitempty"`
+	RateLimits     map[string]*Limit      `protobuf:"bytes,5,rep,name=rate_limits,json=rateLimits,proto3" json:"rate_limits,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // per-action overrides: action -> limit
+	Disabled       bool                   `protobuf:"varint,6,opt,name=disabled,proto3" json:"disabled,omitempty"`
+	CreatedAt      *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	LastUsedAt     *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=last_used_at,json=lastUsedAt,proto3" json:"last_used_at,omitempty"`
+	ExpiresAt      *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	PlaintextToken string                 `protobuf:"bytes,10,opt,name=plaintext_token,json=plaintextToken,proto3" json:"plaintext_token,omitempty"` // set only by CreateKey; empty otherwise
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -506,13 +500,6 @@ func (x *Key) GetDisabled() bool {
 	return false
 }
 
-func (x *Key) GetOwnerNamespace() string {
-	if x != nil {
-		return x.OwnerNamespace
-	}
-	return ""
-}
-
 func (x *Key) GetCreatedAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.CreatedAt
@@ -542,16 +529,15 @@ func (x *Key) GetPlaintextToken() string {
 }
 
 type CreateKeyRequest struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	Name           string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Note           string                 `protobuf:"bytes,2,opt,name=note,proto3" json:"note,omitempty"`
-	Statements     []*Statement           `protobuf:"bytes,3,rep,name=statements,proto3" json:"statements,omitempty"`
-	RateLimits     map[string]*Limit      `protobuf:"bytes,4,rep,name=rate_limits,json=rateLimits,proto3" json:"rate_limits,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // per-action overrides: action -> limit
-	Disabled       bool                   `protobuf:"varint,5,opt,name=disabled,proto3" json:"disabled,omitempty"`
-	OwnerNamespace string                 `protobuf:"bytes,6,opt,name=owner_namespace,json=ownerNamespace,proto3" json:"owner_namespace,omitempty"` // optional organizational label; not used for authz
-	ExpiresAt      *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Note          string                 `protobuf:"bytes,2,opt,name=note,proto3" json:"note,omitempty"`
+	Statements    []*Statement           `protobuf:"bytes,3,rep,name=statements,proto3" json:"statements,omitempty"`
+	RateLimits    map[string]*Limit      `protobuf:"bytes,4,rep,name=rate_limits,json=rateLimits,proto3" json:"rate_limits,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // per-action overrides: action -> limit
+	Disabled      bool                   `protobuf:"varint,5,opt,name=disabled,proto3" json:"disabled,omitempty"`
+	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CreateKeyRequest) Reset() {
@@ -619,13 +605,6 @@ func (x *CreateKeyRequest) GetDisabled() bool {
 	return false
 }
 
-func (x *CreateKeyRequest) GetOwnerNamespace() string {
-	if x != nil {
-		return x.OwnerNamespace
-	}
-	return ""
-}
-
 func (x *CreateKeyRequest) GetExpiresAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.ExpiresAt
@@ -636,7 +615,6 @@ func (x *CreateKeyRequest) GetExpiresAt() *timestamppb.Timestamp {
 type ListKeysRequest struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	IncludeDisabled bool                   `protobuf:"varint,1,opt,name=include_disabled,json=includeDisabled,proto3" json:"include_disabled,omitempty"`
-	OwnerNamespace  string                 `protobuf:"bytes,2,opt,name=owner_namespace,json=ownerNamespace,proto3" json:"owner_namespace,omitempty"` // optional filter
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -676,13 +654,6 @@ func (x *ListKeysRequest) GetIncludeDisabled() bool {
 		return x.IncludeDisabled
 	}
 	return false
-}
-
-func (x *ListKeysRequest) GetOwnerNamespace() string {
-	if x != nil {
-		return x.OwnerNamespace
-	}
-	return ""
 }
 
 type ListKeysResponse struct {
@@ -778,20 +749,19 @@ func (x *GetKeyRequest) GetId() string {
 // unchanged; present = replace). Expiry and rate_limits each have an explicit
 // clear_* flag to distinguish "remove" from "leave unchanged".
 type UpdateKeyRequest struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	Id             string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Name           *string                `protobuf:"bytes,2,opt,name=name,proto3,oneof" json:"name,omitempty"`
-	Note           *string                `protobuf:"bytes,3,opt,name=note,proto3,oneof" json:"note,omitempty"`
-	Disabled       *bool                  `protobuf:"varint,4,opt,name=disabled,proto3,oneof" json:"disabled,omitempty"`
-	OwnerNamespace *string                `protobuf:"bytes,5,opt,name=owner_namespace,json=ownerNamespace,proto3,oneof" json:"owner_namespace,omitempty"`
-	Statements     *StatementList         `protobuf:"bytes,6,opt,name=statements,proto3" json:"statements,omitempty"` // absent = leave unchanged; present = replace
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Id         string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name       *string                `protobuf:"bytes,2,opt,name=name,proto3,oneof" json:"name,omitempty"`
+	Note       *string                `protobuf:"bytes,3,opt,name=note,proto3,oneof" json:"note,omitempty"`
+	Disabled   *bool                  `protobuf:"varint,4,opt,name=disabled,proto3,oneof" json:"disabled,omitempty"`
+	Statements *StatementList         `protobuf:"bytes,5,opt,name=statements,proto3" json:"statements,omitempty"` // absent = leave unchanged; present = replace
 	// rate_limits (per-action overrides: action -> limit) replaces the key's
 	// overrides when non-empty. A map field carries no presence, so an empty or
 	// omitted map means "leave unchanged"; use clear_rate_limits to remove all.
-	RateLimits      map[string]*Limit      `protobuf:"bytes,7,rep,name=rate_limits,json=rateLimits,proto3" json:"rate_limits,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	ExpiresAt       *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`                       // present = set expiry to this
-	ClearExpiry     bool                   `protobuf:"varint,9,opt,name=clear_expiry,json=clearExpiry,proto3" json:"clear_expiry,omitempty"`                // true = remove any expiry (exclusive with expires_at)
-	ClearRateLimits bool                   `protobuf:"varint,10,opt,name=clear_rate_limits,json=clearRateLimits,proto3" json:"clear_rate_limits,omitempty"` // true = remove all overrides (exclusive with rate_limits)
+	RateLimits      map[string]*Limit      `protobuf:"bytes,6,rep,name=rate_limits,json=rateLimits,proto3" json:"rate_limits,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	ExpiresAt       *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`                      // present = set expiry to this
+	ClearExpiry     bool                   `protobuf:"varint,8,opt,name=clear_expiry,json=clearExpiry,proto3" json:"clear_expiry,omitempty"`               // true = remove any expiry (exclusive with expires_at)
+	ClearRateLimits bool                   `protobuf:"varint,9,opt,name=clear_rate_limits,json=clearRateLimits,proto3" json:"clear_rate_limits,omitempty"` // true = remove all overrides (exclusive with rate_limits)
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -852,13 +822,6 @@ func (x *UpdateKeyRequest) GetDisabled() bool {
 		return *x.Disabled
 	}
 	return false
-}
-
-func (x *UpdateKeyRequest) GetOwnerNamespace() string {
-	if x != nil && x.OwnerNamespace != nil {
-		return *x.OwnerNamespace
-	}
-	return ""
 }
 
 func (x *UpdateKeyRequest) GetStatements() *StatementList {
@@ -1773,7 +1736,7 @@ const file_turnstile_v1_turnstile_proto_rawDesc = "" +
 	"\n" +
 	"RateLimits\x126\n" +
 	"\aper_key\x18\x01 \x01(\v2\x1d.turnstile.v1.RateLimitConfigR\x06perKey\x12@\n" +
-	"\fservice_wide\x18\x02 \x01(\v2\x1d.turnstile.v1.RateLimitConfigR\vserviceWide\"\xb0\x04\n" +
+	"\fservice_wide\x18\x02 \x01(\v2\x1d.turnstile.v1.RateLimitConfigR\vserviceWide\"\x87\x04\n" +
 	"\x03Key\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x12\n" +
@@ -1783,19 +1746,18 @@ const file_turnstile_v1_turnstile_proto_rawDesc = "" +
 	"statements\x12B\n" +
 	"\vrate_limits\x18\x05 \x03(\v2!.turnstile.v1.Key.RateLimitsEntryR\n" +
 	"rateLimits\x12\x1a\n" +
-	"\bdisabled\x18\x06 \x01(\bR\bdisabled\x12'\n" +
-	"\x0fowner_namespace\x18\a \x01(\tR\x0eownerNamespace\x129\n" +
+	"\bdisabled\x18\x06 \x01(\bR\bdisabled\x129\n" +
 	"\n" +
-	"created_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12<\n" +
-	"\flast_used_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"created_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12<\n" +
+	"\flast_used_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"lastUsedAt\x129\n" +
 	"\n" +
-	"expires_at\x18\n" +
-	" \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12'\n" +
-	"\x0fplaintext_token\x18\v \x01(\tR\x0eplaintextToken\x1aR\n" +
+	"expires_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12'\n" +
+	"\x0fplaintext_token\x18\n" +
+	" \x01(\tR\x0eplaintextToken\x1aR\n" +
 	"\x0fRateLimitsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12)\n" +
-	"\x05value\x18\x02 \x01(\v2\x13.turnstile.v1.LimitR\x05value:\x028\x01\"\x98\x03\n" +
+	"\x05value\x18\x02 \x01(\v2\x13.turnstile.v1.LimitR\x05value:\x028\x01\"\xef\x02\n" +
 	"\x10CreateKeyRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
 	"\x04note\x18\x02 \x01(\tR\x04note\x127\n" +
@@ -1804,43 +1766,38 @@ const file_turnstile_v1_turnstile_proto_rawDesc = "" +
 	"statements\x12O\n" +
 	"\vrate_limits\x18\x04 \x03(\v2..turnstile.v1.CreateKeyRequest.RateLimitsEntryR\n" +
 	"rateLimits\x12\x1a\n" +
-	"\bdisabled\x18\x05 \x01(\bR\bdisabled\x12'\n" +
-	"\x0fowner_namespace\x18\x06 \x01(\tR\x0eownerNamespace\x129\n" +
+	"\bdisabled\x18\x05 \x01(\bR\bdisabled\x129\n" +
 	"\n" +
-	"expires_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x1aR\n" +
+	"expires_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x1aR\n" +
 	"\x0fRateLimitsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12)\n" +
-	"\x05value\x18\x02 \x01(\v2\x13.turnstile.v1.LimitR\x05value:\x028\x01\"e\n" +
+	"\x05value\x18\x02 \x01(\v2\x13.turnstile.v1.LimitR\x05value:\x028\x01\"<\n" +
 	"\x0fListKeysRequest\x12)\n" +
-	"\x10include_disabled\x18\x01 \x01(\bR\x0fincludeDisabled\x12'\n" +
-	"\x0fowner_namespace\x18\x02 \x01(\tR\x0eownerNamespace\"9\n" +
+	"\x10include_disabled\x18\x01 \x01(\bR\x0fincludeDisabled\"9\n" +
 	"\x10ListKeysResponse\x12%\n" +
 	"\x04keys\x18\x01 \x03(\v2\x11.turnstile.v1.KeyR\x04keys\"\x1f\n" +
 	"\rGetKeyRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\xc2\x04\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\x80\x04\n" +
 	"\x10UpdateKeyRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
 	"\x04name\x18\x02 \x01(\tH\x00R\x04name\x88\x01\x01\x12\x17\n" +
 	"\x04note\x18\x03 \x01(\tH\x01R\x04note\x88\x01\x01\x12\x1f\n" +
-	"\bdisabled\x18\x04 \x01(\bH\x02R\bdisabled\x88\x01\x01\x12,\n" +
-	"\x0fowner_namespace\x18\x05 \x01(\tH\x03R\x0eownerNamespace\x88\x01\x01\x12;\n" +
+	"\bdisabled\x18\x04 \x01(\bH\x02R\bdisabled\x88\x01\x01\x12;\n" +
 	"\n" +
-	"statements\x18\x06 \x01(\v2\x1b.turnstile.v1.StatementListR\n" +
+	"statements\x18\x05 \x01(\v2\x1b.turnstile.v1.StatementListR\n" +
 	"statements\x12O\n" +
-	"\vrate_limits\x18\a \x03(\v2..turnstile.v1.UpdateKeyRequest.RateLimitsEntryR\n" +
+	"\vrate_limits\x18\x06 \x03(\v2..turnstile.v1.UpdateKeyRequest.RateLimitsEntryR\n" +
 	"rateLimits\x129\n" +
 	"\n" +
-	"expires_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12!\n" +
-	"\fclear_expiry\x18\t \x01(\bR\vclearExpiry\x12*\n" +
-	"\x11clear_rate_limits\x18\n" +
-	" \x01(\bR\x0fclearRateLimits\x1aR\n" +
+	"expires_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12!\n" +
+	"\fclear_expiry\x18\b \x01(\bR\vclearExpiry\x12*\n" +
+	"\x11clear_rate_limits\x18\t \x01(\bR\x0fclearRateLimits\x1aR\n" +
 	"\x0fRateLimitsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12)\n" +
 	"\x05value\x18\x02 \x01(\v2\x13.turnstile.v1.LimitR\x05value:\x028\x01B\a\n" +
 	"\x05_nameB\a\n" +
 	"\x05_noteB\v\n" +
-	"\t_disabledB\x12\n" +
-	"\x10_owner_namespace\"\"\n" +
+	"\t_disabled\"\"\n" +
 	"\x10DeleteKeyRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"\xf0\x01\n" +
 	"\x06Policy\x127\n" +

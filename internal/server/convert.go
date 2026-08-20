@@ -189,16 +189,15 @@ func timePtrToPB(t *time.Time) *timestamppb.Timestamp {
 // (that is populated only by the CreateKey handler, which has the plaintext).
 func keyToPB(k *store.APIKey) *turnstilev1.Key {
 	return &turnstilev1.Key{
-		Id:             k.ID,
-		Name:           k.Name,
-		Note:           k.Note,
-		Statements:     statementsToPB(k.Statements),
-		RateLimits:     perActionToPB(k.RateLimits),
-		Disabled:       k.Disabled,
-		OwnerNamespace: k.OwnerNamespace,
-		CreatedAt:      timeToPB(k.CreatedAt),
-		LastUsedAt:     timePtrToPB(k.LastUsedAt),
-		ExpiresAt:      timePtrToPB(k.ExpiresAt),
+		Id:         k.ID,
+		Name:       k.Name,
+		Note:       k.Note,
+		Statements: statementsToPB(k.Statements),
+		RateLimits: perActionToPB(k.RateLimits),
+		Disabled:   k.Disabled,
+		CreatedAt:  timeToPB(k.CreatedAt),
+		LastUsedAt: timePtrToPB(k.LastUsedAt),
+		ExpiresAt:  timePtrToPB(k.ExpiresAt),
 	}
 }
 

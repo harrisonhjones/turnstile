@@ -100,16 +100,10 @@ message Key {
   repeated Statement statements = 4;
   map<string, Limit> rate_limits = 5; // per-action overrides: action -> limit
   bool disabled = 6;
-  // owner_namespace is an optional, free-form organizational label recording who
-  // "owns" this key (a team or service name). It is a management convenience
-  // only — used to filter ListKeys and group keys in the console — and is NEVER
-  // parsed for authorization. Isolation between projects comes from action/
-  // resource namespacing (see Statement), not from this field.
-  string owner_namespace = 7;
-  google.protobuf.Timestamp created_at = 8;
-  google.protobuf.Timestamp last_used_at = 9;
-  google.protobuf.Timestamp expires_at = 10;
-  string plaintext_token = 11; // set only by CreateKey; empty otherwise
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp last_used_at = 8;
+  google.protobuf.Timestamp expires_at = 9;
+  string plaintext_token = 10; // set only by CreateKey; empty otherwise
 }
 
 message CreateKeyRequest {
@@ -118,13 +112,11 @@ message CreateKeyRequest {
   repeated Statement statements = 3;
   map<string, Limit> rate_limits = 4; // per-action overrides: action -> limit
   bool disabled = 5;
-  string owner_namespace = 6; // optional organizational label; not used for authz
-  google.protobuf.Timestamp expires_at = 7;
+  google.protobuf.Timestamp expires_at = 6;
 }
 
 message ListKeysRequest {
   bool include_disabled = 1;
-  string owner_namespace = 2; // optional filter
 }
 
 message ListKeysResponse {
@@ -144,15 +136,14 @@ message UpdateKeyRequest {
   optional string name = 2;
   optional string note = 3;
   optional bool disabled = 4;
-  optional string owner_namespace = 5;
-  StatementList statements = 6; // absent = leave unchanged; present = replace
+  StatementList statements = 5; // absent = leave unchanged; present = replace
   // rate_limits (per-action overrides: action -> limit) replaces the key's
   // overrides when non-empty. A map field carries no presence, so an empty or
   // omitted map means "leave unchanged"; use clear_rate_limits to remove all.
-  map<string, Limit> rate_limits = 7;
-  google.protobuf.Timestamp expires_at = 8; // present = set expiry to this
-  bool clear_expiry = 9; // true = remove any expiry (exclusive with expires_at)
-  bool clear_rate_limits = 10; // true = remove all overrides (exclusive with rate_limits)
+  map<string, Limit> rate_limits = 6;
+  google.protobuf.Timestamp expires_at = 7; // present = set expiry to this
+  bool clear_expiry = 8; // true = remove any expiry (exclusive with expires_at)
+  bool clear_rate_limits = 9; // true = remove all overrides (exclusive with rate_limits)
 }
 
 message DeleteKeyRequest {
