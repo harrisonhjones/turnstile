@@ -26,11 +26,21 @@ type Authenticator struct {
 	// a hot key. Keys are namespaced ("k:"/"a:") to avoid id collisions.
 	touchMu   sync.Mutex
 	lastTouch map[string]time.Time
+
+	// touchWG tracks in-flight background last-used writes so shutdown can drain
+	// them before the DB is closed (see Wait).
+	touchWG sync.WaitGroup
 }
 
 func NewAuthenticator(s *store.Store) *Authenticator {
 	return &Authenticator{store: s, now: time.Now, lastTouch: make(map[string]time.Time)}
 }
+
+// Wait blocks until all in-flight background last-used writes finish. Call it
+// during graceful shutdown, after request handlers have quiesced (so no new
+// writes are launched) and before closing the store, so a touch write can't
+// race a closing DB. Safe to call when none are in flight.
+func (a *Authenticator) Wait() { a.touchWG.Wait() }
 
 // shouldTouch reports whether subject's last-used timestamp should be written
 // now, recording the decision so concurrent callers debounce against each other.
@@ -107,7 +117,9 @@ func (a *Authenticator) touchLastUsed(key *store.APIKey) {
 	if !a.shouldTouch("k:"+key.ID, now) {
 		return
 	}
+	a.touchWG.Add(1)
 	go func() {
+		defer a.touchWG.Done()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := a.store.TouchLastUsed(ctx, key.ID, now); err != nil {
@@ -121,7 +133,9 @@ func (a *Authenticator) touchAdminLastUsed(ac *store.AdminCredential) {
 	if !a.shouldTouch("a:"+ac.ID, now) {
 		return
 	}
+	a.touchWG.Add(1)
 	go func() {
+		defer a.touchWG.Done()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := a.store.TouchAdminLastUsed(ctx, ac.ID, now); err != nil {

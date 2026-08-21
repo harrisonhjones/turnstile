@@ -28,15 +28,15 @@ func (c *PolicyCache) Set(gp *store.GlobalPolicy) {
 	c.global = gp
 }
 
-// GlobalStatements returns a copy of the current global statements. Returns nil
-// if no policy is loaded.
+// GlobalStatements returns the current global statements, or nil if no policy is
+// loaded. The returned slice is the cached one and MUST be treated as read-only:
+// the cache replaces it wholesale on Set and never mutates it in place, so
+// sharing it (rather than copying) avoids an allocation on every authorization.
 func (c *PolicyCache) GlobalStatements() []policy.Statement {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	if c.global == nil {
 		return nil
 	}
-	out := make([]policy.Statement, len(c.global.Statements))
-	copy(out, c.global.Statements)
-	return out
+	return c.global.Statements
 }

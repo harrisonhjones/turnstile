@@ -26,7 +26,7 @@ func (s *Store) CreateAdminCredential(ctx context.Context, c *AdminCredential) e
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO admin_credentials (id, name, cred_hash, note, created_at)
 		 VALUES (?, ?, ?, ?, ?)`,
-		c.ID, c.Name, c.CredHash, c.Note, formatTime(&c.CreatedAt),
+		c.ID, c.Name, c.CredHash, c.Note, nanos(c.CreatedAt),
 	)
 	if isUniqueViolation(err) {
 		return ErrNameTaken
@@ -57,15 +57,15 @@ func (s *Store) CountAdminCredentials(ctx context.Context) (int, error) {
 // TouchAdminLastUsed updates last_used_at for an admin credential.
 func (s *Store) TouchAdminLastUsed(ctx context.Context, id string, at time.Time) error {
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE admin_credentials SET last_used_at = ? WHERE id = ?`, formatTime(&at), id)
+		`UPDATE admin_credentials SET last_used_at = ? WHERE id = ?`, nanos(at), id)
 	return err
 }
 
 func scanAdminCredential(sc scanner) (*AdminCredential, error) {
 	var (
 		c          AdminCredential
-		createdAt  string
-		lastUsedAt sql.NullString
+		createdAt  int64
+		lastUsedAt sql.NullInt64
 	)
 	err := sc.Scan(&c.ID, &c.Name, &c.CredHash, &c.Note, &createdAt, &lastUsedAt)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -74,11 +74,7 @@ func scanAdminCredential(sc scanner) (*AdminCredential, error) {
 	if err != nil {
 		return nil, fmt.Errorf("scan admin credential: %w", err)
 	}
-	if c.CreatedAt, err = parseTime(createdAt); err != nil {
-		return nil, err
-	}
-	if c.LastUsedAt, err = parseNullTime(lastUsedAt); err != nil {
-		return nil, err
-	}
+	c.CreatedAt = timeFromNanos(createdAt)
+	c.LastUsedAt = timeFromNullNanos(lastUsedAt)
 	return &c, nil
 }

@@ -93,6 +93,53 @@ func TestAPIKeyCRUD(t *testing.T) {
 	}
 }
 
+// TestAPIKeyTimestampsSubSecond verifies key timestamps round-trip at
+// nanosecond precision and that ListAPIKeys orders by created_at
+// chronologically even for keys created within the same second (the epoch-nanos
+// INTEGER storage removes the RFC3339 TEXT lexical-ordering hazard).
+func TestAPIKeyTimestampsSubSecond(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	whole := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)           // 12:00:00.000
+	half := time.Date(2026, 6, 1, 12, 0, 0, 500_000_000, time.UTC)  // 12:00:00.500
+	expiry := time.Date(2026, 7, 1, 9, 8, 7, 123_456_789, time.UTC) // sub-second expiry
+
+	// "older" is at the whole second, "newer" 500ms later in the same second —
+	// the exact case lexical RFC3339 sorting got wrong.
+	older := &APIKey{ID: "k_old", Name: "older", KeyHash: "h_old", CreatedAt: whole, ExpiresAt: &expiry,
+		Statements: []policy.Statement{{Effect: policy.Allow, Actions: []string{"a"}, Resources: []string{"b"}}}}
+	newer := &APIKey{ID: "k_new", Name: "newer", KeyHash: "h_new", CreatedAt: half,
+		Statements: []policy.Statement{{Effect: policy.Allow, Actions: []string{"a"}, Resources: []string{"b"}}}}
+	if err := s.CreateAPIKey(ctx, older); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateAPIKey(ctx, newer); err != nil {
+		t.Fatal(err)
+	}
+
+	// Nanosecond-precision round-trip.
+	got, err := s.GetAPIKeyByID(ctx, "k_old")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.CreatedAt.Equal(whole) {
+		t.Errorf("created_at round-trip: got %v want %v", got.CreatedAt, whole)
+	}
+	if got.ExpiresAt == nil || !got.ExpiresAt.Equal(expiry) {
+		t.Errorf("expires_at round-trip: got %v want %v", got.ExpiresAt, expiry)
+	}
+
+	// ORDER BY created_at DESC must be chronological: newer (.500) before older (.000).
+	keys, err := s.ListAPIKeys(ctx, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(keys) != 2 || keys[0].ID != "k_new" || keys[1].ID != "k_old" {
+		t.Errorf("expected newest-first [k_new, k_old], got %v", []string{keys[0].ID, keys[1].ID})
+	}
+}
+
 func TestGlobalPolicyVersioning(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()

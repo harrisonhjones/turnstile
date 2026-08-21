@@ -94,6 +94,33 @@ func TestEvaluate(t *testing.T) {
 	}
 }
 
+func TestEvaluateLayers(t *testing.T) {
+	global := []Statement{{Effect: Deny, Actions: []string{"svc:danger"}, Resources: []string{"*"}}}
+	key := []Statement{{Effect: Allow, Actions: []string{"svc:*"}, Resources: []string{"*"}}}
+
+	// A deny in the earlier (global) layer wins over an allow in a later layer.
+	if EvaluateLayers("svc:danger", []string{"svc:x"}, global, key).Allowed {
+		t.Error("global deny must override a later key allow")
+	}
+	// The key's allow still grants a benign action.
+	if !EvaluateLayers("svc:read", []string{"svc:x"}, global, key).Allowed {
+		t.Error("key allow should grant svc:read")
+	}
+	// Layered evaluation matches Evaluate on the concatenation.
+	merged := append(append([]Statement{}, global...), key...)
+	for _, action := range []string{"svc:danger", "svc:read", "other:thing"} {
+		layered := EvaluateLayers(action, []string{"svc:x"}, global, key)
+		concat := Evaluate(merged, action, "svc:x")
+		if layered.Allowed != concat.Allowed {
+			t.Errorf("action %q: layered=%v concat=%v", action, layered.Allowed, concat.Allowed)
+		}
+	}
+	// No layers → implicit deny.
+	if EvaluateLayers("svc:read", []string{"svc:x"}).Allowed {
+		t.Error("no layers should be an implicit deny")
+	}
+}
+
 func TestMatchPattern(t *testing.T) {
 	tests := []struct {
 		pattern, value string

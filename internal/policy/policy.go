@@ -67,17 +67,29 @@ type Decision struct {
 // per-key). A matching deny short-circuits; otherwise the first matching allow
 // wins; otherwise the result is an implicit deny.
 func Evaluate(statements []Statement, action string, resources ...string) Decision {
+	return EvaluateLayers(action, resources, statements)
+}
+
+// EvaluateLayers evaluates ordered layers of statements (e.g. the global policy
+// then a key's own statements) without concatenating them. The semantics match
+// Evaluate on the concatenation: a matching deny in any layer wins immediately;
+// otherwise the first matching allow across all layers, in order, wins;
+// otherwise the result is an implicit deny. Evaluating in place lets the hot
+// path avoid allocating a merged slice per request.
+func EvaluateLayers(action string, resources []string, layers ...[]Statement) Decision {
 	var firstAllow *Statement
-	for i := range statements {
-		s := &statements[i]
-		if !s.matches(action, resources) {
-			continue
-		}
-		if s.Effect == Deny {
-			return Decision{Allowed: false, Matched: s}
-		}
-		if firstAllow == nil {
-			firstAllow = s
+	for _, layer := range layers {
+		for i := range layer {
+			s := &layer[i]
+			if !s.matches(action, resources) {
+				continue
+			}
+			if s.Effect == Deny {
+				return Decision{Allowed: false, Matched: s}
+			}
+			if firstAllow == nil {
+				firstAllow = s
+			}
 		}
 	}
 	if firstAllow != nil {

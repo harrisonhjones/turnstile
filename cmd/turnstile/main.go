@@ -185,10 +185,11 @@ func run() error {
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		slog.Error("server shutdown error", "error", err)
 	}
-	// Handlers have drained (or the deadline elapsed), so no new audit writes
-	// will be queued. Drain the writer's queue before the deferred db.Close, so
-	// buffered entries aren't lost to a closing DB.
+	// Handlers have drained (or the deadline elapsed), so no new audit writes or
+	// background last-used writes will be launched. Drain both before the
+	// deferred db.Close, so in-flight writes aren't lost to a closing DB.
 	auditWriter.Wait()
+	authenticator.Wait()
 	return nil
 }
 

@@ -29,17 +29,13 @@ type AuditEntry struct {
 	LatencyMS      int64
 }
 
-// auditNanos encodes a timestamp as epoch nanoseconds for the audit_log
-// timestamp column. Stored as INTEGER so comparisons order chronologically.
-func auditNanos(t time.Time) int64 { return t.UTC().UnixNano() }
-
 // InsertAuditEntry appends an audit entry.
 func (s *Store) InsertAuditEntry(ctx context.Context, e *AuditEntry) error {
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO audit_log
 		 (timestamp, api_key_id, api_key_name, method, path, action, resource, request_summary, response_status, latency_ms)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		auditNanos(e.Timestamp), e.APIKeyID, e.APIKeyName, e.Method, e.Path,
+		nanos(e.Timestamp), e.APIKeyID, e.APIKeyName, e.Method, e.Path,
 		e.Action, e.Resource, e.RequestSummary, e.ResponseStatus, e.LatencyMS,
 	)
 	if err != nil {
@@ -53,7 +49,7 @@ func (s *Store) InsertAuditEntry(ctx context.Context, e *AuditEntry) error {
 // TTL, so pruning is an explicit periodic DELETE.
 func (s *Store) DeleteAuditEntriesBefore(ctx context.Context, cutoff time.Time) (int64, error) {
 	res, err := s.db.ExecContext(ctx,
-		`DELETE FROM audit_log WHERE timestamp < ?`, auditNanos(cutoff))
+		`DELETE FROM audit_log WHERE timestamp < ?`, nanos(cutoff))
 	if err != nil {
 		return 0, fmt.Errorf("delete audit entries: %w", err)
 	}
@@ -109,11 +105,11 @@ func (s *Store) ListAuditEntries(ctx context.Context, f AuditFilter) (entries []
 	}
 	if f.After != nil {
 		where = append(where, "timestamp >= ?")
-		args = append(args, auditNanos(*f.After))
+		args = append(args, nanos(*f.After))
 	}
 	if f.Before != nil {
 		where = append(where, "timestamp <= ?")
-		args = append(args, auditNanos(*f.Before))
+		args = append(args, nanos(*f.Before))
 	}
 	if f.Cursor > 0 {
 		where = append(where, "id < ?")
@@ -144,7 +140,7 @@ func (s *Store) ListAuditEntries(ctx context.Context, f AuditFilter) (entries []
 			&e.Action, &e.Resource, &e.RequestSummary, &e.ResponseStatus, &e.LatencyMS); err != nil {
 			return nil, 0, fmt.Errorf("scan audit entry: %w", err)
 		}
-		e.Timestamp = time.Unix(0, tsNanos).UTC()
+		e.Timestamp = timeFromNanos(tsNanos)
 		entries = append(entries, &e)
 	}
 	if err := rows.Err(); err != nil {

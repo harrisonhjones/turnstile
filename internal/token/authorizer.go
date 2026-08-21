@@ -25,11 +25,9 @@ func (az *Authorizer) Authorize(key *store.APIKey, action string, resources ...s
 	if key == nil {
 		return policy.Decision{Allowed: false}
 	}
-	global := az.cache.GlobalStatements()
-	merged := make([]policy.Statement, 0, len(global)+len(key.Statements))
-	merged = append(merged, global...)
-	merged = append(merged, key.Statements...)
-	return policy.Evaluate(merged, action, resources...)
+	// Evaluate global-first without merging: no per-request allocation, and the
+	// cached global slice is used read-only (see PolicyCache.GlobalStatements).
+	return policy.EvaluateLayers(action, resources, az.cache.GlobalStatements(), key.Statements)
 }
 
 // GrantsAction reports whether key could ever perform action on some resource,

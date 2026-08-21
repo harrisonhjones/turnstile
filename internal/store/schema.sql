@@ -1,3 +1,9 @@
+-- All timestamp columns are stored as epoch NANOSECONDS (INTEGER), not text:
+-- integer comparison orders chronologically and every table shares one
+-- representation (an RFC3339 TEXT column compares lexically, which diverges from
+-- chronological order once trailing-zero fractions are trimmed). Times are
+-- surfaced as RFC3339 on the wire, so operators never see the raw integers.
+
 -- API keys (client tokens presented on the Check hot path). The token itself is
 -- never stored; only its SHA-256 hash. statements holds the key's policy as a
 -- JSON array of policy.Statement; rate_limits is a JSON action→Limit map of the
@@ -9,9 +15,9 @@ CREATE TABLE IF NOT EXISTS api_keys (
     statements      TEXT NOT NULL DEFAULT '[]',
     rate_limits     TEXT NOT NULL DEFAULT '{}',
     note            TEXT NOT NULL DEFAULT '',
-    created_at      TEXT NOT NULL,
-    last_used_at    TEXT,
-    expires_at      TEXT,
+    created_at      INTEGER NOT NULL,
+    last_used_at    INTEGER,
+    expires_at      INTEGER,
     disabled        INTEGER NOT NULL DEFAULT 0
 );
 -- No explicit index on key_hash: the UNIQUE constraint already creates one, and
@@ -27,8 +33,8 @@ CREATE TABLE IF NOT EXISTS admin_credentials (
     name         TEXT NOT NULL UNIQUE,
     cred_hash    TEXT NOT NULL UNIQUE,
     note         TEXT NOT NULL DEFAULT '',
-    created_at   TEXT NOT NULL,
-    last_used_at TEXT
+    created_at   INTEGER NOT NULL,
+    last_used_at INTEGER
 );
 -- As with api_keys.key_hash, the UNIQUE(cred_hash) constraint already provides
 -- the lookup index; no separate index is needed.
@@ -40,21 +46,17 @@ CREATE TABLE IF NOT EXISTS global_policy (
     version     INTEGER NOT NULL,
     statements  TEXT NOT NULL DEFAULT '[]',
     constraints TEXT NOT NULL DEFAULT '{}',
-    updated_at  TEXT NOT NULL,
+    updated_at  INTEGER NOT NULL,
     updated_by  TEXT
 );
 
 -- Audit log. One row per authenticated request, reported by hosts after a
 -- request completes. api_key_name is denormalized so entries remain meaningful
 -- after a key is renamed or deleted. request_summary holds selected
--- non-sensitive parameters (never message text).
---
--- timestamp is stored as epoch NANOSECONDS (INTEGER), not text: integer
--- comparison is unambiguous, so time-range filters and retention are correct at
--- sub-second boundaries (an RFC3339 TEXT column compares lexically, which
--- diverges from chronological order once trailing-zero fractions are trimmed).
--- It is also smaller on the column and its index. QueryAudit returns RFC3339
--- over the wire, so operators never see the raw integers.
+-- non-sensitive parameters (never message text). The timestamp column matters
+-- most here: it is filtered on time ranges and pruned by retention, so the
+-- INTEGER-nanos representation (see the note above) keeps those correct at
+-- sub-second boundaries.
 CREATE TABLE IF NOT EXISTS audit_log (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     timestamp       INTEGER NOT NULL,

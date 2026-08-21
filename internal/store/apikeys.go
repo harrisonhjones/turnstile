@@ -48,7 +48,7 @@ func (s *Store) CreateAPIKey(ctx context.Context, k *APIKey) error {
 		`INSERT INTO api_keys (id, name, key_hash, statements, rate_limits, note, created_at, expires_at, disabled)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		k.ID, k.Name, k.KeyHash, string(stmts), string(limits), k.Note,
-		formatTime(&k.CreatedAt), formatTime(k.ExpiresAt), boolToInt(k.Disabled),
+		nanos(k.CreatedAt), nullableNanos(k.ExpiresAt), boolToInt(k.Disabled),
 	)
 	if isUniqueViolation(err) {
 		return ErrNameTaken
@@ -148,7 +148,7 @@ func (s *Store) UpdateAPIKeyFunc(ctx context.Context, id string, mutate func(*AP
 		`UPDATE api_keys SET name = ?, statements = ?, rate_limits = ?, note = ?, expires_at = ?, disabled = ?
 		 WHERE id = ?`,
 		key.Name, string(stmts), string(limits), key.Note,
-		formatTime(key.ExpiresAt), boolToInt(key.Disabled), key.ID,
+		nullableNanos(key.ExpiresAt), boolToInt(key.Disabled), key.ID,
 	)
 	if isUniqueViolation(err) {
 		return nil, ErrNameTaken
@@ -181,7 +181,7 @@ func (s *Store) DeleteAPIKey(ctx context.Context, id string) error {
 // TouchLastUsed updates last_used_at for a key to the given time.
 func (s *Store) TouchLastUsed(ctx context.Context, id string, at time.Time) error {
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE api_keys SET last_used_at = ? WHERE id = ?`, formatTime(&at), id)
+		`UPDATE api_keys SET last_used_at = ? WHERE id = ?`, nanos(at), id)
 	return err
 }
 
@@ -190,9 +190,9 @@ func scanAPIKey(sc scanner) (*APIKey, error) {
 		k             APIKey
 		statementsRaw string
 		rateLimitsRaw string
-		createdAt     string
-		lastUsedAt    sql.NullString
-		expiresAt     sql.NullString
+		createdAt     int64
+		lastUsedAt    sql.NullInt64
+		expiresAt     sql.NullInt64
 		disabled      int
 	)
 	err := sc.Scan(&k.ID, &k.Name, &k.KeyHash, &statementsRaw, &rateLimitsRaw, &k.Note,
@@ -212,15 +212,9 @@ func scanAPIKey(sc scanner) (*APIKey, error) {
 			return nil, fmt.Errorf("unmarshal rate limits: %w", err)
 		}
 	}
-	if k.CreatedAt, err = parseTime(createdAt); err != nil {
-		return nil, err
-	}
-	if k.LastUsedAt, err = parseNullTime(lastUsedAt); err != nil {
-		return nil, err
-	}
-	if k.ExpiresAt, err = parseNullTime(expiresAt); err != nil {
-		return nil, err
-	}
+	k.CreatedAt = timeFromNanos(createdAt)
+	k.LastUsedAt = timeFromNullNanos(lastUsedAt)
+	k.ExpiresAt = timeFromNullNanos(expiresAt)
 	k.Disabled = disabled != 0
 	return &k, nil
 }

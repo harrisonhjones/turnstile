@@ -39,7 +39,7 @@ func (s *Store) GetGlobalPolicy(ctx context.Context) (*GlobalPolicy, error) {
 		gp             GlobalPolicy
 		statementsRaw  string
 		constraintsRaw string
-		updatedAt      string
+		updatedAt      int64
 		updatedBy      sql.NullString
 	)
 	err := row.Scan(&gp.Version, &statementsRaw, &constraintsRaw, &updatedAt, &updatedBy)
@@ -56,9 +56,7 @@ func (s *Store) GetGlobalPolicy(ctx context.Context) (*GlobalPolicy, error) {
 	if err := json.Unmarshal([]byte(constraintsRaw), &gp.Constraints); err != nil {
 		return nil, fmt.Errorf("unmarshal constraints: %w", err)
 	}
-	if gp.UpdatedAt, err = parseTime(updatedAt); err != nil {
-		return nil, err
-	}
+	gp.UpdatedAt = timeFromNanos(updatedAt)
 	gp.UpdatedBy = updatedBy.String
 	return &gp, nil
 }
@@ -84,7 +82,7 @@ func (s *Store) UpsertGlobalPolicy(ctx context.Context, gp *GlobalPolicy) error 
 		   updated_at = excluded.updated_at,
 		   updated_by = excluded.updated_by`,
 		gp.Version, string(stmts), string(cons),
-		formatTime(&gp.UpdatedAt), nullString(gp.UpdatedBy),
+		nanos(gp.UpdatedAt), nullString(gp.UpdatedBy),
 	)
 	if err != nil {
 		return fmt.Errorf("upsert global policy: %w", err)
@@ -117,7 +115,7 @@ func (s *Store) UpdateGlobalPolicy(ctx context.Context, gp *GlobalPolicy, expect
 		   version = ?, statements = ?, constraints = ?, updated_at = ?, updated_by = ?
 		 WHERE id = 1 AND version = ?`,
 		newVersion, string(stmts), string(cons),
-		formatTime(&gp.UpdatedAt), nullString(gp.UpdatedBy), expectedVersion,
+		nanos(gp.UpdatedAt), nullString(gp.UpdatedBy), expectedVersion,
 	)
 	if err != nil {
 		return fmt.Errorf("update global policy: %w", err)

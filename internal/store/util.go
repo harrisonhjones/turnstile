@@ -3,7 +3,7 @@ package store
 import (
 	"database/sql"
 	"errors"
-	"fmt"
+	"strings"
 	"time"
 
 	sqlite "modernc.org/sqlite"
@@ -17,16 +17,22 @@ var ErrNotFound = errors.New("not found")
 // constraint (api_keys.name or admin_credentials.name).
 var ErrNameTaken = errors.New("name already in use")
 
-// isUniqueViolation reports whether err is a SQLite UNIQUE constraint failure.
-// The driver may report either the primary code (SQLITE_CONSTRAINT) or an
-// extended code (SQLITE_CONSTRAINT_UNIQUE); the low byte holds the primary
-// code, so masking catches both.
+// isUniqueViolation reports whether err is specifically a SQLite UNIQUE
+// constraint failure — not any constraint (NOT NULL, CHECK, FK, PK all share the
+// primary SQLITE_CONSTRAINT code, so masking the low byte would misclassify
+// those as name collisions). We match the extended code SQLITE_CONSTRAINT_UNIQUE
+// (and SQLITE_CONSTRAINT_PRIMARYKEY, which a duplicate id would raise), with a
+// message-substring fallback in case the driver reports only the primary code.
 func isUniqueViolation(err error) bool {
 	var se *sqlite.Error
 	if !errors.As(err, &se) {
 		return false
 	}
-	return se.Code()&0xff == sqlite3.SQLITE_CONSTRAINT
+	switch se.Code() {
+	case sqlite3.SQLITE_CONSTRAINT_UNIQUE, sqlite3.SQLITE_CONSTRAINT_PRIMARYKEY:
+		return true
+	}
+	return strings.Contains(err.Error(), "UNIQUE constraint failed")
 }
 
 // scanner is satisfied by both *sql.Row and *sql.Rows.
@@ -34,32 +40,31 @@ type scanner interface {
 	Scan(dest ...any) error
 }
 
-// Times are stored as RFC3339 strings in UTC for stable, sortable text.
+// All timestamps are stored as epoch nanoseconds (INTEGER). Integer comparison
+// orders chronologically without the lexical hazards of RFC3339 TEXT (trailing-
+// zero fractions), and every table shares one representation.
 
-func formatTime(t *time.Time) any {
+// nanos encodes a non-null timestamp column.
+func nanos(t time.Time) int64 { return t.UTC().UnixNano() }
+
+// nullableNanos encodes a nullable timestamp column: nil → SQL NULL.
+func nullableNanos(t *time.Time) any {
 	if t == nil {
 		return nil
 	}
-	return t.UTC().Format(time.RFC3339Nano)
+	return t.UTC().UnixNano()
 }
 
-func parseTime(s string) (time.Time, error) {
-	t, err := time.Parse(time.RFC3339Nano, s)
-	if err != nil {
-		return time.Time{}, fmt.Errorf("parse time %q: %w", s, err)
-	}
-	return t, nil
-}
+// timeFromNanos decodes a non-null timestamp column.
+func timeFromNanos(n int64) time.Time { return time.Unix(0, n).UTC() }
 
-func parseNullTime(ns sql.NullString) (*time.Time, error) {
-	if !ns.Valid || ns.String == "" {
-		return nil, nil
+// timeFromNullNanos decodes a nullable timestamp column.
+func timeFromNullNanos(ns sql.NullInt64) *time.Time {
+	if !ns.Valid {
+		return nil
 	}
-	t, err := parseTime(ns.String)
-	if err != nil {
-		return nil, err
-	}
-	return &t, nil
+	t := time.Unix(0, ns.Int64).UTC()
+	return &t
 }
 
 func boolToInt(b bool) int {
