@@ -8,10 +8,15 @@ name: Release
 #      release (the auto-bump needs a pre-existing tag as its baseline) or to cut
 #      a release deliberately.
 # Either way the release is: cross-platform binaries + checksums + changelog via
-# GoReleaser (a GitHub Release), and a multi-arch image pushed to Docker Hub.
+# GoReleaser (a GitHub Release), then a multi-arch image pushed to Docker Hub.
+# GoReleaser runs BEFORE the image push so a failed release never leaves images
+# (including the mutable :latest) without a matching GitHub Release.
 #
 # Requires two repo secrets for the Docker Hub push:
 #   DOCKERHUB_USERNAME, DOCKERHUB_TOKEN
+#
+# Actions are pinned to a commit SHA (with a version comment) for supply-chain
+# safety; bump the SHA and comment together when upgrading.
 on:
   push:
     branches: [main]
@@ -32,7 +37,7 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0 # full history + tags for version calc and changelog
 
@@ -41,51 +46,92 @@ jobs:
       - name: Determine next version
         id: tag
         if: github.ref_type != 'tag'
-        uses: mathieudutour/github-tag-action@v6.2
+        uses: mathieudutour/github-tag-action@a22cf08638b34d5badda920f9daf6e72c477b07b # v6.2
         with:
+          # Deliberately the default GITHUB_TOKEN: tags it pushes do NOT re-trigger
+          # workflows, which is exactly what stops the `tags:` trigger from cutting
+          # a second release. Swapping in a PAT or deploy key here would make this
+          # workflow recurse and double-release — don't, without adding a guard.
           github_token: ${{ secrets.GITHUB_TOKEN }}
           release_branches: main
           default_bump: false # no conventional feat/fix/breaking -> no release
 
-      # Resolve the tag/version to release: the pushed tag, or the computed one.
-      # Leaves `tag` empty when a branch push warranted no bump, which skips the
-      # release steps below.
+      # Resolve the tag/version to release: the pushed tag, the freshly computed
+      # one, or — on a retried run — a tag a previous failed run already created at
+      # HEAD (github-tag-action then reports no new commits, so new_tag is empty).
+      # Reusing it makes "Re-run failed jobs" resume the release instead of silently
+      # skipping the version. `tag` stays empty when no bump is warranted.
+      # Values are read from env (never interpolated into the script body) so a
+      # crafted tag name can't inject shell.
       - name: Resolve release tag
         id: rel
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          NEW_TAG: ${{ steps.tag.outputs.new_tag }}
         run: |
-          if [ "${{ github.ref_type }}" = "tag" ]; then
-            tag="${{ github.ref_name }}"
+          if [ "$REF_TYPE" = tag ]; then
+            tag="$REF_NAME"
+          elif [ -n "$NEW_TAG" ]; then
+            tag="$NEW_TAG"
           else
-            tag="${{ steps.tag.outputs.new_tag }}"
+            tag="$(git tag --points-at HEAD --list 'v*' | sort -V | tail -n1)"
           fi
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
           echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         if: steps.rel.outputs.tag
         with:
           go-version-file: go.mod
           cache: true
 
+      # Does the GitHub Release already exist? (A retried run after a
+      # post-GoReleaser failure must not re-run GoReleaser.)
+      - name: Check for existing release
+        id: exists
+        if: steps.rel.outputs.tag
+        env:
+          TAG: ${{ steps.rel.outputs.tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Create the GitHub Release FIRST (binaries + checksums + changelog).
+      - name: Run GoReleaser
+        if: steps.rel.outputs.tag && steps.exists.outputs.exists != 'true'
+        uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6
+        with:
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_CURRENT_TAG: ${{ steps.rel.outputs.tag }}
+
+      # Then build and publish the container image.
       - name: Set up QEMU
         if: steps.rel.outputs.tag
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
 
       - name: Set up Buildx
         if: steps.rel.outputs.tag
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Log in to Docker Hub
         if: steps.rel.outputs.tag
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and push image
         if: steps.rel.outputs.tag
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           platforms: linux/amd64,linux/arm64
@@ -100,21 +146,13 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # Cosmetic README sync — must not fail the release, and runs last.
       - name: Update Docker Hub description
         if: steps.rel.outputs.tag
-        uses: peter-evans/dockerhub-description@v4
+        continue-on-error: true
+        uses: peter-evans/dockerhub-description@432a30c9e07499fd01da9f8a49f0faf9e0ca5b77 # v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
           repository: ${{ env.IMAGE }}
           readme-filepath: ./DOCKERHUB.md
-
-      - name: Run GoReleaser
-        if: steps.rel.outputs.tag
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          version: "~> v2"
-          args: release --clean
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GORELEASER_CURRENT_TAG: ${{ steps.rel.outputs.tag }}

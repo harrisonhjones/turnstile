@@ -23,6 +23,14 @@ On first start against an empty database the container logs a **bootstrap admin
 token once** — capture it from `docker logs`; it guards the management API and
 the console at `http://localhost:8080/ui/`.
 
+Notes:
+
+- Use a **named volume** (as above). A bind mount takes host ownership; the
+  non-root process (uid `65532`) can't write it unless you pre-create the host
+  directory owned by `65532`.
+- Under **mutual TLS**, the built-in healthcheck can't present a client cert, so
+  the container reports unhealthy — run with `--no-healthcheck` in that case.
+
 ## Configuration
 
 All via environment variables (all optional, sane defaults). Common ones:

@@ -132,20 +132,28 @@ tagging step. (`workflow_dispatch` is also available to run it by hand.)
 
 ### What a release produces
 
-When a bump happens, the workflow tags `vX.Y.Z` and then:
+When a bump happens, the workflow tags `vX.Y.Z` and then, in order:
 
 - **GoReleaser** (`.goreleaser.yaml`) builds cross-platform binaries
   (linux/darwin × amd64/arm64), checksums, and a grouped changelog, and publishes
   a **GitHub Release**. The version is stamped into the binary via
   `-ldflags -X main.version=…` (check with `turnstile -version`).
-- A multi-arch **container image** is built from the repo `Dockerfile` and pushed
-  to **Docker Hub** as `harrisonhjones/turnstile:X.Y.Z` and `:latest`, and the
-  Hub description is synced from `DOCKERHUB.md`.
+- Then a multi-arch **container image** is built from the repo `Dockerfile` and
+  pushed to **Docker Hub** as `harrisonhjones/turnstile:X.Y.Z` and `:latest`, and
+  the Hub description is synced from `DOCKERHUB.md`. The Release is created before
+  the image so a failed release never leaves images (including `:latest`) without
+  a matching Release.
 
 GoReleaser and tagging use the workflow's `GITHUB_TOKEN`. The Docker Hub push
 requires two repo secrets: **`DOCKERHUB_USERNAME`** and **`DOCKERHUB_TOKEN`**
 (a Docker Hub access token). The binary carries `version`, `commit`, and `date`,
-injected via ldflags in both GoReleaser and the Docker build.
+injected via ldflags in both GoReleaser and the Docker build. Actions are pinned
+to commit SHAs (with a version comment); bump both together when upgrading.
+
+**If a release run fails partway:** the run is idempotent — just "Re-run failed
+jobs". It reuses the tag already at HEAD and skips GoReleaser if the Release
+already exists, so it resumes rather than silently skipping the version. (If you
+need to abandon a version, delete its remote tag: `git push origin :vX.Y.Z`.)
 
 ### Docker locally
 
@@ -155,7 +163,17 @@ docker run -p 8080:8080 -v turnstile-data:/data turnstile
 ```
 
 The image is a static (CGO-free) binary on a distroless base; the SQLite DB lives
-on the `/data` volume (`DB_PATH=/data/turnstile.db`). It embeds whatever is in
-`internal/management/ui/dist` at build time — a plain checkout ships the UI
-placeholder (the API still works); run `mage build:ui` before `docker build` to
-bake in the real console.
+on the `/data` volume (`DB_PATH=/data/turnstile.db`). The console is **built from
+source in a Node stage inside the image**, so every image ships the real UI (the
+local `internal/management/ui/dist` is `.dockerignore`d and not used — no need to
+run `mage build:ui` first).
+
+Use a **named volume** as shown (`-v turnstile-data:/data`); it inherits the
+image's `/data` ownership so the non-root process can write. A **bind mount**
+(`-v /host/path:/data`) takes host ownership — pre-create it owned by uid `65532`,
+or the container can't write its database.
+
+Under **mutual TLS** (`TLS_CLIENT_CA_FILE` set), `/health` requires a client
+certificate that the built-in probe doesn't present, so the container would report
+unhealthy — run such deployments with `docker run --no-healthcheck` (or override
+the healthcheck).

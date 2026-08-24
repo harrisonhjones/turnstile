@@ -207,7 +207,7 @@ func run() error {
 
 	serveErr := make(chan error, 1)
 	go func() {
-		slog.Info("starting server", "version", version, "addr", cfg.ListenAddr, "tls", cfg.TLSEnabled(), "mtls", cfg.MutualTLS(),
+		slog.Info("starting server", "version", version, "commit", commit, "addr", cfg.ListenAddr, "tls", cfg.TLSEnabled(), "mtls", cfg.MutualTLS(),
 			"service_credential_required", cfg.ServiceCredential != "")
 		var serveError error
 		if cfg.TLSEnabled() {

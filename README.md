@@ -58,7 +58,9 @@ docker run -p 8080:8080 -v turnstile-data:/data harrisonhjones/turnstile:latest
 ```
 
 Or build the image locally (`docker build -t turnstile .`). Either way, watch the
-logs on first start for the bootstrap admin token (below).
+logs on first start for the bootstrap admin token (below). Use a **named volume**
+as shown (a bind mount must be pre-owned by uid `65532`); under mutual TLS, add
+`--no-healthcheck`. See [DEVELOPMENT.md](DEVELOPMENT.md) for details.
 
 On first start against an empty database, Turnstile prints a **bootstrap admin
 token once** — save it; it guards the management API and web console:
