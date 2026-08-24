@@ -101,3 +101,57 @@ The race detector isn't wired to a mage target; when you need it, run
 ```sh
 mage resetDB             # then restart to get a fresh bootstrap admin token
 ```
+
+## CI, releases, and Docker
+
+Two GitHub Actions workflows drive this (`.github/workflows/`):
+
+- **`ci.yml`** — on every pull request and push to `main`: gofmt check, `go vet`,
+  `go build`, and `go test -race`. This is the merge gate.
+- **`release.yml`** — on push to `main`: it derives the next version from the
+  **Conventional Commit** messages since the last tag and, when a release is
+  warranted, tags it and cuts the release.
+
+### Automatic versioning
+
+Version bumps follow the commit types merged since the last tag:
+
+| Commit | Bump |
+|---|---|
+| `fix:` / `perf:` / most types | patch (`x.y.Z`) |
+| `feat:` | minor (`x.Y.0`) |
+| any type with `!` (e.g. `feat!:`) or a `BREAKING CHANGE:` footer | major (`X.0.0`) |
+| only `docs:`/`chore:`/`ci:`/etc. (no releasable change) | none — no tag, no release |
+
+So releasing is just merging Conventional Commits to `main`; there's no manual
+tagging step. (`workflow_dispatch` is also available to run it by hand.)
+
+### What a release produces
+
+When a bump happens, the workflow tags `vX.Y.Z` and then:
+
+- **GoReleaser** (`.goreleaser.yaml`) builds cross-platform binaries
+  (linux/darwin × amd64/arm64), checksums, and a grouped changelog, and publishes
+  a **GitHub Release**. The version is stamped into the binary via
+  `-ldflags -X main.version=…` (check with `turnstile -version`).
+- A multi-arch **container image** is built from the repo `Dockerfile` and pushed
+  to **Docker Hub** as `harrisonhjones/turnstile:X.Y.Z` and `:latest`, and the
+  Hub description is synced from `DOCKERHUB.md`.
+
+GoReleaser and tagging use the workflow's `GITHUB_TOKEN`. The Docker Hub push
+requires two repo secrets: **`DOCKERHUB_USERNAME`** and **`DOCKERHUB_TOKEN`**
+(a Docker Hub access token). The binary carries `version`, `commit`, and `date`,
+injected via ldflags in both GoReleaser and the Docker build.
+
+### Docker locally
+
+```sh
+docker build -t turnstile .
+docker run -p 8080:8080 -v turnstile-data:/data turnstile
+```
+
+The image is a static (CGO-free) binary on a distroless base; the SQLite DB lives
+on the `/data` volume (`DB_PATH=/data/turnstile.db`). It embeds whatever is in
+`internal/management/ui/dist` at build time — a plain checkout ships the UI
+placeholder (the API still works); run `mage build:ui` before `docker build` to
+bake in the real console.

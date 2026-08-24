@@ -5,8 +5,10 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -26,7 +28,26 @@ import (
 	"github.com/harrisonhjones/turnstile/internal/token"
 )
 
+// Build metadata, set at release time via -ldflags "-X main.version=... -X
+// main.commit=... -X main.date=...". Defaults apply to local builds.
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
 func main() {
+	showVersion := flag.Bool("version", false, "print the version and exit")
+	healthCheck := flag.Bool("healthcheck", false, "probe the local /health endpoint and exit 0 (healthy) or 1")
+	flag.Parse()
+	if *showVersion {
+		fmt.Printf("turnstile %s (commit %s, built %s)\n", version, commit, date)
+		return
+	}
+	if *healthCheck {
+		os.Exit(runHealthcheck())
+	}
+
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(logger)
 
@@ -34,6 +55,46 @@ func main() {
 		slog.Error("fatal", "error", err)
 		os.Exit(1)
 	}
+}
+
+// runHealthcheck probes the server's own /health endpoint over the loopback and
+// returns a process exit code (0 healthy, 1 unhealthy). It backs the Docker
+// HEALTHCHECK: the distroless runtime has no shell or curl, so the binary probes
+// itself. It reads the same LISTEN_ADDR/TLS_* config the server uses.
+//
+// Note: when mutual TLS is configured, /health requires a client certificate,
+// which this probe does not present — disable or override the container
+// healthcheck in that deployment.
+func runHealthcheck() int {
+	addr := os.Getenv("LISTEN_ADDR")
+	if addr == "" {
+		addr = ":8080"
+	}
+	_, port, err := net.SplitHostPort(addr)
+	if err != nil || port == "" {
+		fmt.Fprintf(os.Stderr, "healthcheck: cannot parse LISTEN_ADDR %q: %v\n", addr, err)
+		return 1
+	}
+
+	client := &http.Client{Timeout: 3 * time.Second}
+	scheme := "http"
+	if os.Getenv("TLS_CERT_FILE") != "" {
+		scheme = "https"
+		// Loopback self-probe against our own (possibly self-signed) cert.
+		client.Transport = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
+	}
+
+	resp, err := client.Get(scheme + "://127.0.0.1:" + port + "/health")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "healthcheck: %v\n", err)
+		return 1
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		fmt.Fprintf(os.Stderr, "healthcheck: unexpected status %d\n", resp.StatusCode)
+		return 1
+	}
+	return 0
 }
 
 func run() error {
@@ -146,7 +207,7 @@ func run() error {
 
 	serveErr := make(chan error, 1)
 	go func() {
-		slog.Info("starting server", "addr", cfg.ListenAddr, "tls", cfg.TLSEnabled(), "mtls", cfg.MutualTLS(),
+		slog.Info("starting server", "version", version, "addr", cfg.ListenAddr, "tls", cfg.TLSEnabled(), "mtls", cfg.MutualTLS(),
 			"service_credential_required", cfg.ServiceCredential != "")
 		var serveError error
 		if cfg.TLSEnabled() {

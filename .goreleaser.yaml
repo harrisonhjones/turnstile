@@ -1,0 +1,58 @@
+# GoReleaser builds the cross-platform binaries, checksums, changelog, and the
+# GitHub Release. The container image is built and pushed separately by the
+# release workflow (reusing the repo Dockerfile), so there is no `dockers:`
+# section here. See https://goreleaser.com.
+version: 2
+
+project_name: turnstile
+
+before:
+  hooks:
+    - go mod download
+
+builds:
+  - id: turnstile
+    main: ./cmd/turnstile
+    binary: turnstile
+    env:
+      - CGO_ENABLED=0 # pure-Go SQLite (modernc.org/sqlite), so static builds work
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{ .Version }} -X main.commit={{ .Commit }} -X main.date={{ .Date }}
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  # Build the changelog from commit subjects (Conventional Commits), grouped by
+  # type. `git` needs no API calls and works from the tagged history.
+  use: git
+  sort: asc
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\(.+\))?!?:.*$'
+      order: 0
+    - title: Fixes
+      regexp: '^.*?fix(\(.+\))?!?:.*$'
+      order: 1
+    - title: Other
+      order: 999
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+      - '^ci:'
+      - '(?i)^Merge '
+
+release:
+  github:
+    owner: harrisonhjones
+    name: turnstile

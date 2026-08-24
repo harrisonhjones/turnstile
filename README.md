@@ -48,6 +48,18 @@ The full build — regenerating protos and compiling the web UI — is
 `mage build:all`, which needs extra tooling (buf, the protoc plugins, and Node);
 see [DEVELOPMENT.md](DEVELOPMENT.md). It isn't required just to run the service.
 
+### Run with Docker
+
+Released images are published to Docker Hub. The SQLite database lives on
+`/data`, so mount a volume to persist it:
+
+```sh
+docker run -p 8080:8080 -v turnstile-data:/data harrisonhjones/turnstile:latest
+```
+
+Or build the image locally (`docker build -t turnstile .`). Either way, watch the
+logs on first start for the bootstrap admin token (below).
+
 On first start against an empty database, Turnstile prints a **bootstrap admin
 token once** — save it; it guards the management API and web console:
 
