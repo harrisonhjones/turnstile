@@ -1,18 +1,21 @@
 name: Release
 
-# On every push to main, derive the next SemVer from the Conventional Commit
-# messages since the last tag (feat -> minor, fix/perf/etc. -> patch, a `!` or
-# `BREAKING CHANGE` -> major) and, when a bump is warranted, tag it and cut a
-# release: cross-platform binaries + checksums + changelog via GoReleaser (a
-# GitHub Release), and a multi-arch container image pushed to Docker Hub.
-# Commits that don't warrant a bump (docs/chore/etc. only) produce no tag and
-# the release steps are skipped.
+# Two ways to cut a release:
+#   1. Push to main — the next SemVer is derived from the Conventional Commit
+#      messages since the last tag (feat -> minor, fix/perf/etc. -> patch, a `!`
+#      or `BREAKING CHANGE` -> major); a warranted bump is tagged automatically.
+#   2. Push a tag `vX.Y.Z` — releases that exact tag. Used to seed the very first
+#      release (the auto-bump needs a pre-existing tag as its baseline) or to cut
+#      a release deliberately.
+# Either way the release is: cross-platform binaries + checksums + changelog via
+# GoReleaser (a GitHub Release), and a multi-arch image pushed to Docker Hub.
 #
 # Requires two repo secrets for the Docker Hub push:
 #   DOCKERHUB_USERNAME, DOCKERHUB_TOKEN
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   workflow_dispatch:
 
 permissions:
@@ -33,54 +36,72 @@ jobs:
         with:
           fetch-depth: 0 # full history + tags for version calc and changelog
 
+      # Branch push: compute the next version from Conventional Commits. Skipped
+      # on a tag push (the tag already names the version).
       - name: Determine next version
         id: tag
+        if: github.ref_type != 'tag'
         uses: mathieudutour/github-tag-action@v6.2
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           release_branches: main
           default_bump: false # no conventional feat/fix/breaking -> no release
 
+      # Resolve the tag/version to release: the pushed tag, or the computed one.
+      # Leaves `tag` empty when a branch push warranted no bump, which skips the
+      # release steps below.
+      - name: Resolve release tag
+        id: rel
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            tag="${{ github.ref_name }}"
+          else
+            tag="${{ steps.tag.outputs.new_tag }}"
+          fi
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+          echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
       - uses: actions/setup-go@v5
-        if: steps.tag.outputs.new_tag
+        if: steps.rel.outputs.tag
         with:
           go-version-file: go.mod
           cache: true
 
       - name: Set up QEMU
-        if: steps.tag.outputs.new_tag
+        if: steps.rel.outputs.tag
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Buildx
-        if: steps.tag.outputs.new_tag
+        if: steps.rel.outputs.tag
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to Docker Hub
-        if: steps.tag.outputs.new_tag
+        if: steps.rel.outputs.tag
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and push image
-        if: steps.tag.outputs.new_tag
+        if: steps.rel.outputs.tag
         uses: docker/build-push-action@v6
         with:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
           build-args: |
-            VERSION=${{ steps.tag.outputs.new_version }}
+            VERSION=${{ steps.rel.outputs.version }}
             COMMIT=${{ github.sha }}
-            BUILD_DATE=${{ github.event.repository.updated_at }}
+            BUILD_DATE=${{ steps.rel.outputs.date }}
           tags: |
-            ${{ env.IMAGE }}:${{ steps.tag.outputs.new_version }}
+            ${{ env.IMAGE }}:${{ steps.rel.outputs.version }}
             ${{ env.IMAGE }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Update Docker Hub description
-        if: steps.tag.outputs.new_tag
+        if: steps.rel.outputs.tag
         uses: peter-evans/dockerhub-description@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -89,11 +110,11 @@ jobs:
           readme-filepath: ./DOCKERHUB.md
 
       - name: Run GoReleaser
-        if: steps.tag.outputs.new_tag
+        if: steps.rel.outputs.tag
         uses: goreleaser/goreleaser-action@v6
         with:
           version: "~> v2"
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GORELEASER_CURRENT_TAG: ${{ steps.tag.outputs.new_tag }}
+          GORELEASER_CURRENT_TAG: ${{ steps.rel.outputs.tag }}

@@ -108,9 +108,13 @@ Two GitHub Actions workflows drive this (`.github/workflows/`):
 
 - **`ci.yml`** — on every pull request and push to `main`: gofmt check, `go vet`,
   `go build`, and `go test -race`. This is the merge gate.
-- **`release.yml`** — on push to `main`: it derives the next version from the
-  **Conventional Commit** messages since the last tag and, when a release is
-  warranted, tags it and cuts the release.
+- **`release.yml`** — cuts releases two ways: (1) on push to `main` it derives
+  the next version from the **Conventional Commit** messages since the last tag
+  and, when a bump is warranted, tags it automatically; or (2) pushing a
+  `vX.Y.Z` tag releases that exact version. The auto-bump needs a pre-existing
+  tag as its baseline, so **seed the first release by pushing a tag once**
+  (`git tag v0.1.0 && git push origin v0.1.0`); after that, pushes to `main`
+  auto-bump on their own.
 
 ### Automatic versioning
 
