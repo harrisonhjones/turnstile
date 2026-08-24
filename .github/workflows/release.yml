@@ -35,6 +35,8 @@ env:
 
 jobs:
   release:
+    # Don't run on a tag/branch deletion push (e.g. removing an orphaned tag).
+    if: ${{ !github.event.deleted }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -80,6 +82,13 @@ jobs:
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
           echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      # github-tag-action creates the tag on the remote via the API, so it isn't
+      # in the local checkout. Fetch it so GoReleaser can resolve it to HEAD
+      # (otherwise: "git tag vX was not made against commit …").
+      - name: Fetch the release tag
+        if: steps.rel.outputs.tag
+        run: git fetch origin --force --tags
 
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         if: steps.rel.outputs.tag
