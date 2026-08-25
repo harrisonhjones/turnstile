@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 )
 
 // defaultAuditRetentionDays is how long audit entries are kept when
@@ -37,6 +38,10 @@ type Config struct {
 	TLSCertFile     string
 	TLSKeyFile      string
 	TLSClientCAFile string
+
+	// MetricsEnabled exposes Prometheus metrics at /metrics (unauthenticated,
+	// like /health). Defaults to true; set METRICS_ENABLED=false to turn off.
+	MetricsEnabled bool
 }
 
 // envFile is the optional dotenv file loaded on startup. Real environment
@@ -56,6 +61,7 @@ func Load() (*Config, error) {
 		TLSCertFile:       os.Getenv("TLS_CERT_FILE"),
 		TLSKeyFile:        os.Getenv("TLS_KEY_FILE"),
 		TLSClientCAFile:   os.Getenv("TLS_CLIENT_CA_FILE"),
+		MetricsEnabled:    boolEnvOrDefault("METRICS_ENABLED", true),
 	}
 
 	retention, err := intEnvOrDefault("AUDIT_RETENTION_DAYS", defaultAuditRetentionDays)
@@ -85,6 +91,20 @@ func envOrDefault(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// boolEnvOrDefault parses a boolean-ish env var, returning fallback when unset.
+// "false"/"0"/"off"/"no" (case-insensitive) are false; anything else is true.
+func boolEnvOrDefault(key string, fallback bool) bool {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "false", "0", "off", "no":
+		return false
+	}
+	return true
 }
 
 // intEnvOrDefault parses a non-negative integer env var, returning fallback

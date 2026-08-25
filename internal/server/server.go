@@ -32,6 +32,7 @@ import (
 	turnstilev1 "github.com/harrisonhjones/turnstile/gen/turnstile/v1"
 	"github.com/harrisonhjones/turnstile/gen/turnstile/v1/turnstilev1connect"
 	"github.com/harrisonhjones/turnstile/internal/audit"
+	"github.com/harrisonhjones/turnstile/internal/metrics"
 	"github.com/harrisonhjones/turnstile/internal/ratelimit"
 	"github.com/harrisonhjones/turnstile/internal/store"
 	"github.com/harrisonhjones/turnstile/internal/token"
@@ -143,6 +144,7 @@ func (h *Handler) Check(ctx context.Context, req *connect.Request[turnstilev1.Ch
 			// Generic unauthenticated result — never distinguish unknown vs
 			// disabled vs expired (no token-existence leak).
 			slog.Debug("check: rejected token", "reason", err)
+			metrics.RecordCheck("unauthenticated")
 			return connect.NewResponse(&turnstilev1.CheckResponse{
 				Allowed:  false,
 				Decision: turnstilev1.Decision_UNAUTHENTICATED,
@@ -156,6 +158,7 @@ func (h *Handler) Check(ctx context.Context, req *connect.Request[turnstilev1.Ch
 
 	decision := h.authorizer.Authorize(principal.Key, r.Action, r.Resources...)
 	if !decision.Allowed {
+		metrics.RecordCheck("policy_denied")
 		return connect.NewResponse(&turnstilev1.CheckResponse{
 			Allowed:   false,
 			Principal: pbPrincipal,
@@ -167,6 +170,7 @@ func (h *Handler) Check(ctx context.Context, req *connect.Request[turnstilev1.Ch
 	if r.CountRateLimit {
 		ok, retryAfter := h.rateLimiter.Allow(principal.Key.ID, principal.Key.RateLimits, r.Action)
 		if !ok {
+			metrics.RecordCheck("rate_limited")
 			return connect.NewResponse(&turnstilev1.CheckResponse{
 				Allowed:   false,
 				Principal: pbPrincipal,
@@ -179,6 +183,7 @@ func (h *Handler) Check(ctx context.Context, req *connect.Request[turnstilev1.Ch
 		}
 	}
 
+	metrics.RecordCheck("allowed")
 	return connect.NewResponse(&turnstilev1.CheckResponse{
 		Allowed:   true,
 		Principal: pbPrincipal,

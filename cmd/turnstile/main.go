@@ -22,6 +22,7 @@ import (
 	"github.com/harrisonhjones/turnstile/internal/audit"
 	"github.com/harrisonhjones/turnstile/internal/config"
 	"github.com/harrisonhjones/turnstile/internal/management"
+	"github.com/harrisonhjones/turnstile/internal/metrics"
 	"github.com/harrisonhjones/turnstile/internal/ratelimit"
 	"github.com/harrisonhjones/turnstile/internal/server"
 	"github.com/harrisonhjones/turnstile/internal/store"
@@ -167,6 +168,18 @@ func run() error {
 
 	// The Connect service (gRPC, gRPC-Web, and Connect HTTP/JSON on one route).
 	svcPath, svcHandler := svc.NewConnectHandler(connect.WithInterceptors(gate))
+
+	// Optional Prometheus metrics: instrument the Connect handler for request
+	// rate/latency and expose /metrics (unauthenticated, like /health). The
+	// Check-decision counter is recorded from the handler regardless; it's a
+	// no-op until Enable runs here.
+	if cfg.MetricsEnabled {
+		m := metrics.Enable()
+		svcHandler = m.Instrument(svcHandler)
+		mux.Handle("GET /metrics", m.Handler())
+		slog.Info("metrics enabled at /metrics")
+	}
+
 	mux.Handle(svcPath, svcHandler)
 
 	// Unauthenticated health check.

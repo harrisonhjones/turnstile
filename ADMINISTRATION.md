@@ -26,20 +26,29 @@ defaults), seeded from an optional `.env` file. The full reference is in
 [DEVELOPMENT.md](DEVELOPMENT.md#configuration); the operational essentials:
 
 - `LISTEN_ADDR` (`:8080`) — bind address; serves the Connect API, the console at
-  `/ui/`, and `/health`.
+  `/ui/`, `/health`, and (when enabled) `/metrics`.
 - `DB_PATH` (`turnstile.db`) — SQLite file.
 - `AUDIT_RETENTION_DAYS` (`365`) — audit rows older than this are pruned; `0`
   keeps them forever.
+- `METRICS_ENABLED` (`true`) — expose Prometheus metrics at `/metrics`; set
+  `false`/`0`/`off`/`no` to disable.
 
 `/health` is unauthenticated and returns `{"status":"ok"}` for liveness checks.
+
+`/metrics` (when enabled) is unauthenticated too and exposes the standard Go
+runtime/process collectors plus `turnstile_http_requests_total`,
+`turnstile_http_request_duration_seconds`, and `turnstile_check_decisions_total`
+(labelled by decision: `allowed`, `policy_denied`, `rate_limited`,
+`unauthenticated`). It shares the main listener, so restrict it at the network
+layer if you don't want it publicly reachable.
 
 ### The bootstrap admin credential
 
 On first start against an empty database, Turnstile seeds a default policy and a
 **bootstrap admin credential**, logging the token **once**:
 
-```
-level=WARN msg="created bootstrap admin credential — store this token now, it will not be shown again" admin_token=tsa_...
+```json
+{"time":"2026-08-25T12:00:00Z","level":"WARN","msg":"created bootstrap admin credential — store this token now, it will not be shown again","admin_token":"tsa_..."}
 ```
 
 Save it — it guards every management RPC and the web console. Only its SHA-256

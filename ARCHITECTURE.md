@@ -58,6 +58,7 @@ why management is usable without a gRPC client.
 | `internal/server` | Connect handlers wiring the above together, plus the proto↔domain conversion layer. |
 | `internal/management` | Serves the embedded SPA (`go:embed`), with a placeholder until the UI is built. |
 | `internal/config` | Environment + `.env` configuration. |
+| `internal/metrics` | Optional Prometheus instrumentation: the `/metrics` endpoint, Connect request counters/histograms, and the `Check`-decision counter. No-op when disabled. |
 
 ## Repository layout
 
@@ -73,6 +74,7 @@ internal/
   store/             SQLite schema + accessors
   server/            Connect handlers + shutdown gate wiring it all together
   config/            environment + .env configuration
+  metrics/           optional Prometheus instrumentation (/metrics)
   management/ui/     embedded Ionic React admin SPA (→ ui/dist via go:embed)
 magefile.go          build:/run:/gen/fmt:/vet:/test:/check/clean:/resetDB targets
 ```
