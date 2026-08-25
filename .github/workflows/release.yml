@@ -127,6 +127,10 @@ jobs:
         run: |
           npm --prefix internal/management/ui ci
           npm --prefix internal/management/ui run build
+          # Vite empties dist/ on build, deleting the tracked .gitkeep; recreate
+          # it so the tree stays clean (GoReleaser refuses to run on a dirty git
+          # state). The built assets under dist/ are gitignored.
+          touch internal/management/ui/dist/.gitkeep
 
       # Create the GitHub Release FIRST (binaries + checksums + changelog).
       - name: Run GoReleaser
