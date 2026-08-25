@@ -45,11 +45,10 @@ changelog:
     - title: Other
       order: 999
   filters:
+    # Every commit type now cuts a release (default_bump: patch), so the
+    # changelog includes them all — docs/test/chore/ci/refactor/etc. land under
+    # "Other". Only merge commits are dropped as noise.
     exclude:
-      - '^docs:'
-      - '^test:'
-      - '^chore:'
-      - '^ci:'
       - '(?i)^Merge '
 
 release:

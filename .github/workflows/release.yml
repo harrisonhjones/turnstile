@@ -56,7 +56,10 @@ jobs:
           # workflow recurse and double-release — don't, without adding a guard.
           github_token: ${{ secrets.GITHUB_TOKEN }}
           release_branches: main
-          default_bump: false # no conventional feat/fix/breaking -> no release
+          # Patch is the catch-all: feat -> minor, `!`/BREAKING -> major, and
+          # anything else (fix/refactor/perf/docs/chore/ci/…) -> patch. So every
+          # push to main cuts at least a patch release.
+          default_bump: patch
 
       # Resolve the tag/version to release: the pushed tag, the freshly computed
       # one, or — on a retried run — a tag a previous failed run already created at
@@ -111,6 +114,20 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # Build the management console so GoReleaser's `go build` embeds the real
+      # UI (mirrors the Dockerfile's Node stage). Without this the release
+      # binaries ship the "run mage build:ui" placeholder page. Same guard as
+      # GoReleaser so it only runs when a new release is actually being cut.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        if: steps.rel.outputs.tag && steps.exists.outputs.exists != 'true'
+        with:
+          node-version: 22
+      - name: Build UI for the release binaries
+        if: steps.rel.outputs.tag && steps.exists.outputs.exists != 'true'
+        run: |
+          npm --prefix internal/management/ui ci
+          npm --prefix internal/management/ui run build
+
       # Create the GitHub Release FIRST (binaries + checksums + changelog).
       - name: Run GoReleaser
         if: steps.rel.outputs.tag && steps.exists.outputs.exists != 'true'
@@ -138,6 +155,33 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      # Decide which image tags to push. The immutable :X.Y.Z is always pushed
+      # (safe to re-push on a retry). :latest is added only when this tag is the
+      # highest released version AND not a prerelease — so re-running an older
+      # run, or pushing a vX.Y.Z-rc.N tag, can't move :latest backward or onto a
+      # prerelease. Values are read from env, never interpolated into the script.
+      - name: Compute image tags
+        id: imgtags
+        if: steps.rel.outputs.tag
+        env:
+          VERSION: ${{ steps.rel.outputs.version }}
+          TAG: ${{ steps.rel.outputs.tag }}
+        run: |
+          latest="$(git tag --list 'v*' | sort -V | tail -n1)"
+          tags="${IMAGE}:${VERSION}"
+          case "$TAG" in
+            *-*) prerelease=yes ;;
+            *)   prerelease=no ;;
+          esac
+          if [ "$TAG" = "$latest" ] && [ "$prerelease" = no ]; then
+            tags="${tags}"$'\n'"${IMAGE}:latest"
+          fi
+          {
+            echo "tags<<EOF"
+            printf '%s\n' "$tags"
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
+
       - name: Build and push image
         if: steps.rel.outputs.tag
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
@@ -149,9 +193,7 @@ jobs:
             VERSION=${{ steps.rel.outputs.version }}
             COMMIT=${{ github.sha }}
             BUILD_DATE=${{ steps.rel.outputs.date }}
-          tags: |
-            ${{ env.IMAGE }}:${{ steps.rel.outputs.version }}
-            ${{ env.IMAGE }}:latest
+          tags: ${{ steps.imgtags.outputs.tags }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
