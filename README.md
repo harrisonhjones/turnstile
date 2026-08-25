@@ -65,8 +65,8 @@ as shown (a bind mount must be pre-owned by uid `65532`); under mutual TLS, add
 On first start against an empty database, Turnstile prints a **bootstrap admin
 token once** — save it; it guards the management API and web console:
 
-```
-level=WARN msg="created bootstrap admin credential — store this token now, it will not be shown again" admin_token=tsa_...
+```json
+{"time":"2026-08-25T12:00:00Z","level":"WARN","msg":"created bootstrap admin credential — store this token now, it will not be shown again","admin_token":"tsa_..."}
 ```
 
 Then open the console at **http://localhost:8080/ui/** and sign in with that

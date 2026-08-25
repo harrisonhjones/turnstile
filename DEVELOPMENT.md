@@ -110,8 +110,8 @@ Two GitHub Actions workflows drive this (`.github/workflows/`):
   `go build`, and `go test -race`. This is the merge gate.
 - **`release.yml`** — cuts releases two ways: (1) on push to `main` it derives
   the next version from the **Conventional Commit** messages since the last tag
-  and, when a bump is warranted, tags it automatically; or (2) pushing a
-  `vX.Y.Z` tag releases that exact version. The auto-bump needs a pre-existing
+  and tags it automatically (every push to `main` cuts at least a patch); or
+  (2) pushing a `vX.Y.Z` tag releases that exact version. The auto-bump needs a pre-existing
   tag as its baseline, so **seed the first release by pushing a tag once**
   (`git tag v0.1.0 && git push origin v0.1.0`); after that, pushes to `main`
   auto-bump on their own.
@@ -122,10 +122,11 @@ Version bumps follow the commit types merged since the last tag:
 
 | Commit | Bump |
 |---|---|
-| `fix:` / `perf:` / most types | patch (`x.y.Z`) |
 | `feat:` | minor (`x.Y.0`) |
 | any type with `!` (e.g. `feat!:`) or a `BREAKING CHANGE:` footer | major (`X.0.0`) |
-| only `docs:`/`chore:`/`ci:`/etc. (no releasable change) | none — no tag, no release |
+| anything else (`fix:`/`refactor:`/`perf:`/`docs:`/`chore:`/`ci:`/…) | patch (`x.y.Z`) |
+
+Patch is the catch-all, so every push to `main` cuts at least a patch release.
 
 So releasing is just merging Conventional Commits to `main`; there's no manual
 tagging step. (`workflow_dispatch` is also available to run it by hand.)
