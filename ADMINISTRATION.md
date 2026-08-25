@@ -39,8 +39,26 @@ defaults), seeded from an optional `.env` file. The full reference is in
 runtime/process collectors plus `turnstile_http_requests_total`,
 `turnstile_http_request_duration_seconds`, and `turnstile_check_decisions_total`
 (labelled by decision: `allowed`, `policy_denied`, `rate_limited`,
-`unauthenticated`). It shares the main listener, so restrict it at the network
-layer if you don't want it publicly reachable.
+`unauthenticated`). It shares the main listener.
+
+**Securing it.** Following Prometheus convention, the endpoint carries no
+built-in auth — the metrics hold operational counts, not secrets, and the
+standard practice is to control *who can reach it* rather than authenticate the
+scrape. In order of preference:
+
+- **Network isolation** — the usual answer: only allow your Prometheus host to
+  reach the listener (security group / firewall rule / private subnet / k8s
+  `NetworkPolicy`). Loopback-only doesn't fit here, since Prometheus normally
+  scrapes from another machine.
+- **mTLS** — if you run Turnstile with `TLS_CLIENT_CA_FILE` (see below),
+  `/metrics` is already behind client-certificate auth like every other route;
+  Prometheus scrapes it with a `tls_config` client cert/key.
+- **A reverse proxy / sidecar** — put nginx/Envoy (or `kube-rbac-proxy` in
+  Kubernetes) in front to add TLS + basic-auth/bearer auth without changing
+  Turnstile. Prometheus supports `basic_auth`, `authorization`, and `tls_config`
+  in its `scrape_configs`, so any of these works on the scraper side.
+
+If none of these fit your deployment, set `METRICS_ENABLED=false`.
 
 ### The bootstrap admin credential
 
