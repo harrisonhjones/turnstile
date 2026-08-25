@@ -136,10 +136,11 @@ func (Run) UI() error {
 // Test groups the test targets: `mage test:unit` and `mage test:integration`.
 type Test mg.Namespace
 
-// Unit runs the unit tests (no external dependencies).
+// Unit runs the unit tests with the race detector (matching CI, so a local
+// `mage check` reproduces the CI gate). No external dependencies.
 func (Test) Unit() error {
-	fmt.Println("running unit tests")
-	return sh.RunV("go", "test", "./...")
+	fmt.Println("running unit tests (-race)")
+	return sh.RunV("go", "test", "-race", "./...")
 }
 
 // Integration runs tests behind the `integration` build tag — reserved for

@@ -81,8 +81,8 @@ mage check       # the CI gate: static analysis (vet) + unit tests
 mage test:unit   # just the unit tests
 ```
 
-The race detector isn't wired to a mage target; when you need it, run
-`go test -race ./...` directly.
+`mage test:unit` (and `mage check`) run the tests with the race detector, matching
+what CI runs, so a local `mage check` reproduces the CI gate.
 
 - `internal/policy` — the statement engine (deny-wins, wildcards, multi-resource
   OR, namespace isolation) and validation (well-formedness, global deny-only).
