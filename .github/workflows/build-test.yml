@@ -1,9 +1,10 @@
-name: CI
+name: build-test
 
+# Reusable quality gate: gofmt, vet, build, and race tests. Defined once and
+# called (via `uses:`) by both on-pull-request.yml and on-push-to-main.yml, so
+# the PR check and the release gate can never drift apart.
 on:
-  pull_request:
-  push:
-    branches: [main]
+  workflow_call: # reusable only; not triggered directly
 
 permissions:
   contents: read

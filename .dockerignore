@@ -2,14 +2,17 @@
 .git
 .github
 **/node_modules
-# The console is built fresh in the image's Node stage; never copy a local
-# build (it would make images non-reproducible / depend on working-tree state).
+# The console is built fresh in the image's compile-mode Node stage; never copy a
+# local build (it would make images non-reproducible / depend on working-tree
+# state). Unused by the prebuilt path, which ships GoReleaser's UI-embedded binary.
 internal/management/ui/dist
 *.db
 *.db-wal
 *.db-shm
-.env
+.env*
 /turnstile
 /tmp
 tmp/
 build-errors.log
+# NOTE: /dist is intentionally NOT ignored — the prebuilt Docker build
+# (BIN_MODE=prebuilt, used by CI) COPYs GoReleaser's binaries from there.

@@ -15,3 +15,6 @@ build-errors.log
 
 # Go build cache dir (if any)
 /build/
+
+# GoReleaser output (also the source the prebuilt Docker build COPYs from in CI)
+/dist/

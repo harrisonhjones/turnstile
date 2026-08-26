@@ -105,17 +105,25 @@ mage resetDB             # then restart to get a fresh bootstrap admin token
 
 ## CI, releases, and Docker
 
-Two GitHub Actions workflows drive this (`.github/workflows/`):
+Three GitHub Actions workflows drive this, named after *when* they run
+(`.github/workflows/`):
 
-- **`ci.yml`** — on every pull request and push to `main`: gofmt check, `go vet`,
-  `go build`, and `go test -race`. This is the merge gate.
-- **`release.yml`** — cuts releases two ways: (1) on push to `main` it derives
-  the next version from the **Conventional Commit** messages since the last tag
-  and tags it automatically (every push to `main` cuts at least a patch); or
-  (2) pushing a `vX.Y.Z` tag releases that exact version. The auto-bump needs a pre-existing
-  tag as its baseline, so **seed the first release by pushing a tag once**
-  (`git tag v0.1.0 && git push origin v0.1.0`); after that, pushes to `main`
-  auto-bump on their own.
+- **`build-test.yml`** — the reusable quality gate (gofmt check, `go vet`,
+  `go build`, `go test -race`). Defined once and called by the two below via
+  `workflow_call` so the PR check and the release gate can't drift.
+- **`on-pull-request.yml`** — on every pull request: calls `build-test`, then
+  runs `release-validate` (`goreleaser check`, a snapshot build, and a prebuilt
+  multi-arch image build). This is the only place `release-validate` *gates* — the
+  release doesn't run on PRs — so **route Docker/GoReleaser-config changes through
+  a PR** to catch a broken config before merge.
+- **`on-push-to-main.yml`** — cuts releases two ways: (1) on push to `main` it
+  derives the next version from the **Conventional Commit** messages since the
+  last tag and tags it automatically (every push cuts at least a patch); or
+  (2) pushing a `vX.Y.Z` tag releases that exact version. The release job
+  `needs:` `build-test`, so a direct push that breaks tests can't ship. The
+  auto-bump needs a pre-existing tag as its baseline, so **seed the first release
+  by pushing a tag once** (`git tag v0.1.0 && git push origin v0.1.0`); after
+  that, pushes to `main` auto-bump on their own.
 
 ### Automatic versioning
 
@@ -140,11 +148,14 @@ When a bump happens, the workflow tags `vX.Y.Z` and then, in order:
   (linux/darwin × amd64/arm64), checksums, and a grouped changelog, and publishes
   a **GitHub Release**. The version is stamped into the binary via
   `-ldflags -X main.version=…` (check with `turnstile -version`).
-- Then a multi-arch **container image** is built from the repo `Dockerfile` and
-  pushed to **Docker Hub** as `harrisonhjones/turnstile:X.Y.Z` and `:latest`, and
-  the Hub description is synced from `DOCKERHUB.md`. The Release is created before
-  the image so a failed release never leaves images (including `:latest`) without
-  a matching Release.
+- Then a multi-arch **container image** is built and pushed to **Docker Hub** as
+  `harrisonhjones/turnstile:X.Y.Z` and `:latest`, and the Hub description is
+  synced from `DOCKERHUB.md`. The image build **COPYs the binary GoReleaser
+  already cross-compiled** (`BIN_MODE=prebuilt`) instead of recompiling in-image,
+  so the release doesn't build the binary twice and needs no QEMU (every image
+  stage is `$BUILDPLATFORM`-pinned or COPY-only — nothing foreign-arch executes).
+  The Release is created before the image so a failed release never leaves images
+  (including `:latest`) without a matching Release.
 
 GoReleaser and tagging use the workflow's `GITHUB_TOKEN`. The Docker Hub push
 requires two repo secrets: **`DOCKERHUB_USERNAME`** and **`DOCKERHUB_TOKEN`**
@@ -153,9 +164,12 @@ injected via ldflags in both GoReleaser and the Docker build. Actions are pinned
 to commit SHAs (with a version comment); bump both together when upgrading.
 
 **If a release run fails partway:** the run is idempotent — just "Re-run failed
-jobs". It reuses the tag already at HEAD and skips GoReleaser if the Release
-already exists, so it resumes rather than silently skipping the version. (If you
-need to abandon a version, delete its remote tag: `git push origin :vX.Y.Z`.)
+jobs". It reuses the tag already at HEAD and, if the Release already exists,
+re-runs GoReleaser with `--skip=publish` (rebuilding `dist/` for the image step
+without re-uploading), so it resumes rather than skipping the version. A
+`workflow_dispatch` on a commit that already carries a tag replays the release
+the same way rather than cutting a new version. (To abandon a version, delete its
+remote tag: `git push origin :vX.Y.Z`.)
 
 ### Docker locally
 
@@ -165,10 +179,13 @@ docker run -p 8080:8080 -v turnstile-data:/data turnstile
 ```
 
 The image is a static (CGO-free) binary on a distroless base; the SQLite DB lives
-on the `/data` volume (`DB_PATH=/data/turnstile.db`). The console is **built from
-source in a Node stage inside the image**, so every image ships the real UI (the
-local `internal/management/ui/dist` is `.dockerignore`d and not used — no need to
-run `mage build:ui` first).
+on the `/data` volume (`DB_PATH=/data/turnstile.db`). A plain `docker build .`
+uses the default **`BIN_MODE=compile`**: it builds the console from source in a
+Node stage and compiles the binary in-image, so every locally-built image ships
+the real UI (the local `internal/management/ui/dist` is `.dockerignore`d and not
+used — no need to run `mage build:ui` first). CI instead builds with
+`--build-arg BIN_MODE=prebuilt`, which COPYs GoReleaser's already-compiled binary
+from `dist/` — same image, without recompiling.
 
 Use a **named volume** as shown (`-v turnstile-data:/data`); it inherits the
 image's `/data` ownership so the non-root process can write. A **bind mount**

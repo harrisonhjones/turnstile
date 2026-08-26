@@ -1,10 +1,19 @@
 # syntax=docker/dockerfile:1
 
-# Stage 1 — build the Ionic React management console, so the image serves the
-# real UI (not the placeholder). Built fresh here for reproducibility rather than
-# relying on a local dist. Pinned to the builder platform: the output is
-# architecture-independent, so building it once natively avoids emulating npm
-# under QEMU for the arm64 leg of a multi-arch build.
+# Two ways to get the binary in, selected by the BIN_MODE build-arg:
+#   compile  (default) — self-contained `docker build .`; builds the UI + binary
+#                        from source.
+#   prebuilt           — copies the binary GoReleaser already cross-compiled into
+#                        ./dist. CI uses this so a multi-arch release doesn't
+#                        recompile what GoReleaser built (compiling modernc.org/
+#                        sqlite under buildx+QEMU can run many minutes per arch).
+# Either way we cross-compile from $BUILDPLATFORM to TARGETOS/TARGETARCH (BuildKit
+# built-ins) so the arm64 leg builds natively instead of under QEMU (CGO off).
+ARG BIN_MODE=compile
+
+# UI stage (compile mode only) — build the Ionic React console so go:embed bakes
+# the real UI into the binary. $BUILDPLATFORM-pinned: the output is
+# architecture-independent, so build it once natively.
 FROM --platform=$BUILDPLATFORM node:22 AS ui
 WORKDIR /ui
 COPY internal/management/ui/package.json internal/management/ui/package-lock.json ./
@@ -12,12 +21,9 @@ RUN npm ci
 COPY internal/management/ui/ ./
 RUN npm run build # emits /ui/dist
 
-# Stage 2 — compile a static (CGO-free) binary. SQLite is pure Go via
-# modernc.org/sqlite, so no cgo is needed. Pinned to the builder platform and
-# cross-compiled to TARGETOS/TARGETARCH (BuildKit built-ins), so the arm64 leg
-# of a multi-arch build compiles natively instead of running go under QEMU. For
-# a local single-arch build these equal the host, so it's a no-op.
-FROM --platform=$BUILDPLATFORM golang:1.26 AS build
+# Compile stage — static (CGO-free) binary. SQLite is pure Go via
+# modernc.org/sqlite, so no cgo is needed.
+FROM --platform=$BUILDPLATFORM golang:1.26 AS compile
 WORKDIR /src
 
 # Module proxy. Defaults to Go's normal public proxy; override only when needed,
@@ -42,13 +48,27 @@ ARG TARGETARCH
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath \
     -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${BUILD_DATE}" \
     -o /out/turnstile ./cmd/turnstile
-# Create the data dir here so it can be copied with the right ownership below
-# (the distroless runtime has no shell to mkdir/chown).
-RUN mkdir /data
+
+# Prebuilt stage — pick the matching linux/<arch> binary out of GoReleaser's
+# dist/. The glob absorbs GoReleaser's microarch suffix (amd64_v1, arm64_v8.0).
+# Assumes exactly ONE build variant per goarch (no goamd64/goarm64 lists in
+# .goreleaser.yaml); zero matches hard-errors ("not found") — never silently wrong.
+FROM scratch AS prebuilt
+ARG TARGETARCH
+COPY dist/turnstile_linux_${TARGETARCH}*/turnstile /out/turnstile
+
+# Select the binary source (compile | prebuilt) for the runtime image.
+FROM ${BIN_MODE} AS binaries
+
+# Create the writable, nonroot-owned /data dir in a tiny stage so it exists
+# regardless of BIN_MODE (the prebuilt stage is FROM scratch — no shell to
+# mkdir/chown). $BUILDPLATFORM-pinned: a dir has no arch, so build it natively.
+FROM --platform=$BUILDPLATFORM busybox AS datadir
+RUN mkdir -p /data
 
 FROM gcr.io/distroless/static-debian12:nonroot
-COPY --from=build /out/turnstile /usr/local/bin/turnstile
-COPY --from=build --chown=nonroot:nonroot /data /data
+COPY --from=binaries /out/turnstile /usr/local/bin/turnstile
+COPY --from=datadir --chown=nonroot:nonroot /data /data
 
 # SQLite database lives on a volume so it survives container restarts.
 ENV DB_PATH=/data/turnstile.db

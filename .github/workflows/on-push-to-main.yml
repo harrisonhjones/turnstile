@@ -1,22 +1,22 @@
-name: Release
+name: on-push-to-main
 
-# Two ways to cut a release:
+# Cuts a release two ways:
 #   1. Push to main — the next SemVer is derived from the Conventional Commit
-#      messages since the last tag (feat -> minor, fix/perf/etc. -> patch, a `!`
-#      or `BREAKING CHANGE` -> major); a warranted bump is tagged automatically.
-#   2. Push a tag `vX.Y.Z` — releases that exact tag. Used to seed the very first
-#      release (the auto-bump needs a pre-existing tag as its baseline) or to cut
-#      a release deliberately.
-# Either way the release is: cross-platform binaries + checksums + changelog via
-# GoReleaser (a GitHub Release), then a multi-arch image pushed to Docker Hub.
-# GoReleaser runs BEFORE the image push so a failed release never leaves images
-# (including the mutable :latest) without a matching GitHub Release.
+#      messages since the last tag (feat -> minor, `!`/BREAKING -> major,
+#      everything else -> patch); every push cuts at least a patch.
+#   2. Push a tag `vX.Y.Z` — releases that exact tag (used to seed the first
+#      release, or to cut one deliberately).
+# The release is: cross-platform binaries + checksums + changelog via GoReleaser
+# (a GitHub Release), then a multi-arch image pushed to Docker Hub. GoReleaser
+# runs BEFORE the image push so a failed release never leaves images (including
+# the mutable :latest) without a matching GitHub Release. The image build COPYs
+# GoReleaser's already-cross-compiled binary (BIN_MODE=prebuilt) rather than
+# recompiling in-image.
 #
 # Requires two repo secrets for the Docker Hub push:
 #   DOCKERHUB_USERNAME, DOCKERHUB_TOKEN
 #
-# Actions are pinned to a commit SHA (with a version comment) for supply-chain
-# safety; bump the SHA and comment together when upgrading.
+# Actions are pinned to a commit SHA (with a version comment); bump both together.
 on:
   push:
     branches: [main]
@@ -34,9 +34,16 @@ env:
   IMAGE: harrisonhjones/turnstile
 
 jobs:
+  # Gate: the release won't start unless gofmt/vet/build/test pass on this commit.
+  # Fast (~30s) and blocking — the same reusable workflow the PR check uses, so a
+  # direct push that breaks tests can't ship.
+  build-test:
+    if: ${{ !github.event.deleted }} # don't run on tag/branch deletions
+    uses: ./.github/workflows/build-test.yml
+
   release:
-    # Don't run on a tag/branch deletion push (e.g. removing an orphaned tag).
-    if: ${{ !github.event.deleted }}
+    needs: build-test
+    if: ${{ !github.event.deleted }} # don't run on tag/branch deletions
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -44,10 +51,13 @@ jobs:
           fetch-depth: 0 # full history + tags for version calc and changelog
 
       # Branch push: compute the next version from Conventional Commits. Skipped
-      # on a tag push (the tag already names the version).
+      # on a tag push (the tag names the version) and on workflow_dispatch (a
+      # manual re-run reuses HEAD's existing tag via the fallback below, so it
+      # replays a release idempotently instead of inventing a new version each
+      # click).
       - name: Determine next version
         id: tag
-        if: github.ref_type != 'tag'
+        if: github.ref_type != 'tag' && github.event_name != 'workflow_dispatch'
         uses: mathieudutour/github-tag-action@a22cf08638b34d5badda920f9daf6e72c477b07b # v6.2
         with:
           # Deliberately the default GITHUB_TOKEN: tags it pushes do NOT re-trigger
@@ -62,12 +72,12 @@ jobs:
           default_bump: patch
 
       # Resolve the tag/version to release: the pushed tag, the freshly computed
-      # one, or — on a retried run — a tag a previous failed run already created at
-      # HEAD (github-tag-action then reports no new commits, so new_tag is empty).
-      # Reusing it makes "Re-run failed jobs" resume the release instead of silently
-      # skipping the version. `tag` stays empty when no bump is warranted.
-      # Values are read from env (never interpolated into the script body) so a
-      # crafted tag name can't inject shell.
+      # one, or — on a retried/dispatched run — a tag a previous run already
+      # created at HEAD (github-tag-action then reports no new commits, so new_tag
+      # is empty). Reusing it makes "Re-run failed jobs" and workflow_dispatch
+      # resume the release instead of skipping the version. `tag` stays empty when
+      # no bump is warranted. Values are read from env (never interpolated into
+      # the script body) so a crafted tag name can't inject shell.
       - name: Resolve release tag
         id: rel
         env:
@@ -100,7 +110,7 @@ jobs:
           cache: true
 
       # Does the GitHub Release already exist? (A retried run after a
-      # post-GoReleaser failure must not re-run GoReleaser.)
+      # post-GoReleaser failure must not re-publish it — see --skip=publish below.)
       - name: Check for existing release
         id: exists
         if: steps.rel.outputs.tag
@@ -114,16 +124,17 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # Build the management console so GoReleaser's `go build` embeds the real
-      # UI (mirrors the Dockerfile's Node stage). Without this the release
-      # binaries ship the "run mage build:ui" placeholder page. Same guard as
-      # GoReleaser so it only runs when a new release is actually being cut.
+      # Build the management console so GoReleaser's `go build` embeds the real UI
+      # (mirrors the Dockerfile's ui stage). Guarded on `tag` — the same condition
+      # as GoReleaser — NOT on the exists guard: GoReleaser runs on every retry to
+      # repopulate dist/ for the prebuilt image, and that binary must carry the
+      # real UI, so the UI has to be rebuilt on retries too.
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        if: steps.rel.outputs.tag && steps.exists.outputs.exists != 'true'
+        if: steps.rel.outputs.tag
         with:
           node-version: 22
       - name: Build UI for the release binaries
-        if: steps.rel.outputs.tag && steps.exists.outputs.exists != 'true'
+        if: steps.rel.outputs.tag
         run: |
           npm --prefix internal/management/ui ci
           npm --prefix internal/management/ui run build
@@ -132,22 +143,24 @@ jobs:
           # state). The built assets under dist/ are gitignored.
           touch internal/management/ui/dist/.gitkeep
 
-      # Create the GitHub Release FIRST (binaries + checksums + changelog).
+      # Create the GitHub Release (binaries + checksums + changelog) and populate
+      # dist/ for the image build below. Runs whenever a tag exists; on a retry
+      # where the Release already exists, --skip=publish rebuilds dist/ WITHOUT
+      # re-uploading — preserving the release-first + idempotent-retry story.
       - name: Run GoReleaser
-        if: steps.rel.outputs.tag && steps.exists.outputs.exists != 'true'
+        if: steps.rel.outputs.tag
         uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6
         with:
           version: "~> v2"
-          args: release --clean
+          args: release --clean ${{ steps.exists.outputs.exists == 'true' && '--skip=publish' || '' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GORELEASER_CURRENT_TAG: ${{ steps.rel.outputs.tag }}
 
-      # Then build and publish the container image.
-      - name: Set up QEMU
-        if: steps.rel.outputs.tag
-        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
-
+      # No QEMU: every Dockerfile stage used by the prebuilt path is either
+      # $BUILDPLATFORM-pinned (runs natively) or COPY-only, so nothing foreign-arch
+      # executes at build time. Add docker/setup-qemu-action back if a stage ever
+      # gains a target-platform RUN (else the arm64 leg fails "exec format error").
       - name: Set up Buildx
         if: steps.rel.outputs.tag
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
@@ -159,10 +172,9 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # Decide which image tags to push. The immutable :X.Y.Z is always pushed
-      # (safe to re-push on a retry). :latest is added only when this tag is the
-      # highest released version AND not a prerelease — so re-running an older
-      # run, or pushing a vX.Y.Z-rc.N tag, can't move :latest backward or onto a
+      # Always push the immutable :X.Y.Z (retry-safe). Add :latest only when this
+      # tag is the highest released version AND not a prerelease, so re-running an
+      # older run or pushing a vX.Y.Z-rc.N tag can't move :latest backward/onto a
       # prerelease. Values are read from env, never interpolated into the script.
       - name: Compute image tags
         id: imgtags
@@ -171,21 +183,19 @@ jobs:
           VERSION: ${{ steps.rel.outputs.version }}
           TAG: ${{ steps.rel.outputs.tag }}
         run: |
-          latest="$(git tag --list 'v*' | sort -V | tail -n1)"
+          # grep -v -- '-' drops prereleases: GNU `sort -V` ranks vX.Y.Z-rc.1 ABOVE
+          # vX.Y.Z, so without this a stable release cut while a matching prerelease
+          # tag exists would leave :latest stranded on the older image.
+          latest="$(git tag --list 'v*' | grep -v -- '-' | sort -V | tail -n1)"
           tags="${IMAGE}:${VERSION}"
-          case "$TAG" in
-            *-*) prerelease=yes ;;
-            *)   prerelease=no ;;
-          esac
-          if [ "$TAG" = "$latest" ] && [ "$prerelease" = no ]; then
+          case "$TAG" in *-*) pre=yes ;; *) pre=no ;; esac
+          if [ "$TAG" = "$latest" ] && [ "$pre" = no ]; then
             tags="${tags}"$'\n'"${IMAGE}:latest"
           fi
-          {
-            echo "tags<<EOF"
-            printf '%s\n' "$tags"
-            echo EOF
-          } >> "$GITHUB_OUTPUT"
+          { echo "tags<<EOF"; printf '%s\n' "$tags"; echo EOF; } >> "$GITHUB_OUTPUT"
 
+      # Build and push the image, COPYing GoReleaser's cross-compiled binary from
+      # dist/ (BIN_MODE=prebuilt) instead of recompiling in-image.
       - name: Build and push image
         if: steps.rel.outputs.tag
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
@@ -194,6 +204,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           build-args: |
+            BIN_MODE=prebuilt
             VERSION=${{ steps.rel.outputs.version }}
             COMMIT=${{ github.sha }}
             BUILD_DATE=${{ steps.rel.outputs.date }}
