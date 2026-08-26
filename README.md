@@ -48,19 +48,23 @@ The full build — regenerating protos and compiling the web UI — is
 `mage build:all`, which needs extra tooling (buf, the protoc plugins, and Node);
 see [DEVELOPMENT.md](DEVELOPMENT.md). It isn't required just to run the service.
 
-### Run with Docker
+## Run with Docker
 
-Released images are published to Docker Hub. The SQLite database lives on
-`/data`, so mount a volume to persist it:
+A published multi-arch image (`linux/amd64`, `linux/arm64`) is on Docker Hub. All
+state (keys, policy, audit) lives in a SQLite database under `/data`, so mount a
+volume to persist it:
 
 ```sh
-docker run -p 8080:8080 -v turnstile-data:/data harrisonhjones/turnstile:latest
+docker run -d --name turnstile \
+  -v turnstile-data:/data -p 8080:8080 \
+  harrisonhjones/turnstile:latest
 ```
 
-Or build the image locally (`docker build -t turnstile .`). Either way, watch the
-logs on first start for the bootstrap admin token (below). Use a **named volume**
-as shown (a bind mount must be pre-owned by uid `65532`); under mutual TLS, add
-`--no-healthcheck`. See [DEVELOPMENT.md](DEVELOPMENT.md) for details.
+Use a **named volume** as above (a bind mount must be pre-owned by uid `65532`,
+since the image runs non-root). Pass configuration with `-e KEY=value`; under
+mutual TLS add `--no-healthcheck` (the built-in probe presents no client cert).
+You can also build the image locally: `docker build -t turnstile .`. Full env-var
+table and deployment notes: [DOCKERHUB.md](DOCKERHUB.md).
 
 On first start against an empty database, Turnstile prints a **bootstrap admin
 token once** — save it; it guards the management API and web console:
