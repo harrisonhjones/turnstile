@@ -22,7 +22,6 @@ import (
 	"crypto/subtle"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"time"
@@ -209,19 +208,21 @@ func (h *Handler) Authenticate(ctx context.Context, req *connect.Request[turnsti
 	return connect.NewResponse(principalToPB(principal.Key)), nil
 }
 
-// ReportAudit ingests a stream of audit entries and persists them in the
-// background. It returns the count accepted.
-func (h *Handler) ReportAudit(ctx context.Context, stream *connect.ClientStream[turnstilev1.AuditEntry]) (*connect.Response[turnstilev1.ReportAuditSummary], error) {
-	if err := h.requireService(stream.RequestHeader()); err != nil {
+// ReportAudit ingests a batch of audit entries and persists them in the
+// background. It returns the count accepted. Unary (not client-streaming) so
+// hosts can call it as plain JSON: one POST with a JSON array of entries.
+func (h *Handler) ReportAudit(ctx context.Context, req *connect.Request[turnstilev1.ReportAuditRequest]) (*connect.Response[turnstilev1.ReportAuditSummary], error) {
+	if err := h.requireService(req.Header()); err != nil {
 		return nil, err
 	}
+	entries := req.Msg.Entries
+	if len(entries) > maxReportAuditEntries {
+		return nil, connect.NewError(connect.CodeResourceExhausted,
+			fmt.Errorf("ReportAudit accepts at most %d entries per call; split into multiple calls", maxReportAuditEntries))
+	}
 	var accepted int64
-	for stream.Receive() {
-		if accepted >= int64(maxReportAuditEntries) {
-			return nil, connect.NewError(connect.CodeResourceExhausted,
-				fmt.Errorf("ReportAudit accepts at most %d entries per call; split into multiple calls", maxReportAuditEntries))
-		}
-		entry := auditFromPB(stream.Msg())
+	for _, pb := range entries {
+		entry := auditFromPB(pb)
 		if entry.Timestamp.IsZero() {
 			entry.Timestamp = h.now()
 		}
@@ -230,9 +231,6 @@ func (h *Handler) ReportAudit(ctx context.Context, stream *connect.ClientStream[
 		if h.auditWriter.Write(entry) {
 			accepted++
 		}
-	}
-	if err := stream.Err(); err != nil && !errors.Is(err, io.EOF) {
-		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	return connect.NewResponse(&turnstilev1.ReportAuditSummary{Accepted: accepted}), nil
 }

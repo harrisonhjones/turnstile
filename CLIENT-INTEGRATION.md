@@ -10,7 +10,7 @@ A host replaces its in-process authorization with three interactions:
 
 1. **On each request** — call `Check(token, "svc:action", resources, count_rate_limit=true)`.
 2. **For a whoami** — call `Authenticate(token)`.
-3. **After a request completes** — buffer an audit entry and stream it via `ReportAudit`.
+3. **After a request completes** — buffer audit entries and POST a batch via `ReportAudit`.
 
 The host keeps its own **action/resource vocabulary**; Turnstile only ever sees
 opaque strings.
@@ -127,38 +127,65 @@ authorization or rate-limit side effects.
 ## Reporting audit
 
 Status and latency aren't known until the host finishes serving, so audit is
-reported *after* the fact — buffer entries and stream them up periodically:
+reported *after* the fact. `ReportAudit` is a **unary** call taking a batch of
+entries, so — like the rest of the API — you can send it as plain JSON. Buffer
+entries and POST them periodically:
+
+```sh
+curl -sS http://localhost:8080/turnstile.v1.Turnstile/ReportAudit \
+  -H "Content-Type: application/json" \
+  -d '{
+    "entries": [
+      {
+        "apiKeyId": "key_...",
+        "apiKeyName": "photos-reader",
+        "method": "REST",
+        "path": "/albums/a1b2",
+        "action": "photos:getAlbum",
+        "resource": "photos:album:a1b2",
+        "requestSummary": "GET /albums/a1b2",
+        "responseStatus": 200,
+        "latencyMs": 12
+      }
+    ]
+  }'
+# -> {"accepted":"1"}     (int64 is JSON-encoded as a string, per protobuf JSON)
+```
+
+Or from the Go client:
 
 ```go
-stream := client.ReportAudit(ctx)
-for _, e := range buffered {
-	_ = stream.Send(&turnstilev1.AuditEntry{
-		ApiKeyId:       e.keyID,
-		ApiKeyName:     e.keyName,   // denormalized; survives rename/delete
-		Method:         "REST",      // or "MCP", host-defined
-		Path:           e.path,
-		Action:         e.action,    // namespaced
-		Resource:       e.resource,
-		RequestSummary: e.summary,   // non-sensitive; NEVER message text
-		ResponseStatus: int32(e.status),
-		LatencyMs:      e.latencyMS,
-		Timestamp:      timestamppb.New(e.at),
-	})
-}
-summary, err := stream.CloseAndReceive() // summary.Msg.Accepted = count stored
+resp, err := client.ReportAudit(ctx, connect.NewRequest(&turnstilev1.ReportAuditRequest{
+	Entries: []*turnstilev1.AuditEntry{
+		{
+			ApiKeyId:       e.keyID,
+			ApiKeyName:     e.keyName,   // denormalized; survives rename/delete
+			Method:         "REST",      // or "MCP", host-defined
+			Path:           e.path,
+			Action:         e.action,    // namespaced
+			Resource:       e.resource,
+			RequestSummary: e.summary,   // non-sensitive; NEVER message text
+			ResponseStatus: int32(e.status),
+			LatencyMs:      e.latencyMS,
+			Timestamp:      timestamppb.New(e.at), // omit and the server stamps at receipt
+		},
+	},
+}))
+// resp.Msg.Accepted = count stored
 ```
 
 Keep `requestSummary` free of sensitive content (message bodies, secrets). A
-single call is capped at 10,000 entries — split larger batches across calls.
-Operators query it back through `QueryAudit` or the web console (see
-[ADMINISTRATION.md](ADMINISTRATION.md#auditing)).
+single call is capped at 10,000 entries and is **all-or-nothing** — a batch over
+the cap is rejected whole with `ResourceExhausted`, so split larger batches
+across calls. Operators query it back through `QueryAudit` or the web console
+(see [ADMINISTRATION.md](ADMINISTRATION.md#auditing)).
 
 ## Migration sketch
 
 To move a host off in-process authorization: both its HTTP middleware and any
 non-HTTP entrypoint (e.g. a tool/RPC guard) call `Check` with the same
 namespaced vocabulary the host already uses internally; a `whoami` maps to
-`Authenticate`; completed requests are buffered and streamed via `ReportAudit`.
+`Authenticate`; completed requests are buffered and batch-reported via `ReportAudit`.
 The host keeps its own `<service>:` prefix and resource builders — Turnstile only
 sees strings. Expect one extra round-trip per request until (if ever) an edge
 cache lands.

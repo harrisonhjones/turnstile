@@ -87,8 +87,8 @@ copy `.env.example` to `.env` to customize. See
 - **[DEVELOPMENT.md](DEVELOPMENT.md)** — building, testing, configuration, and
   contributing.
 - **[CLIENT-INTEGRATION.md](CLIENT-INTEGRATION.md)** — for host services: how to
-  call `Check`/`Authenticate` and stream `ReportAudit` (with `curl` and Go
-  examples).
+  call `Check`/`Authenticate` and batch-report via `ReportAudit` (with `curl` and
+  Go examples).
 - **[ADMINISTRATION.md](ADMINISTRATION.md)** — for operators: running the
   service, minting/managing keys, editing policy, auditing, and securing
   host→Turnstile (service credential or mTLS).

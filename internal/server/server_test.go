@@ -146,17 +146,15 @@ func TestServiceEndToEnd(t *testing.T) {
 		t.Errorf("Authenticate key id mismatch: %q vs %q", who.Msg.KeyId, created.Msg.Id)
 	}
 
-	// --- ReportAudit stream ---
-	stream := env.client.ReportAudit(ctx)
+	// --- ReportAudit (unary batch) ---
+	entries := make([]*turnstilev1.AuditEntry, 0, 3)
 	for i := 0; i < 3; i++ {
-		if err := stream.Send(&turnstilev1.AuditEntry{
+		entries = append(entries, &turnstilev1.AuditEntry{
 			ApiKeyId: created.Msg.Id, ApiKeyName: "reader", Method: "REST", Path: "/x",
 			Action: "svc:read", ResponseStatus: 200, LatencyMs: 3,
-		}); err != nil {
-			t.Fatalf("audit send: %v", err)
-		}
+		})
 	}
-	summary, err := stream.CloseAndReceive()
+	summary, err := env.client.ReportAudit(ctx, connect.NewRequest(&turnstilev1.ReportAuditRequest{Entries: entries}))
 	if err != nil {
 		t.Fatalf("ReportAudit: %v", err)
 	}
@@ -179,8 +177,9 @@ func TestServiceEndToEnd(t *testing.T) {
 	}
 }
 
-// TestReportAuditCap verifies ReportAudit rejects a stream past the entry cap
-// with ResourceExhausted, while the entries accepted before the cap persist.
+// TestReportAuditCap verifies ReportAudit rejects a batch past the entry cap
+// with ResourceExhausted (the whole batch atomically — nothing persisted),
+// while a batch exactly at the cap is accepted.
 func TestReportAuditCap(t *testing.T) {
 	orig := maxReportAuditEntries
 	maxReportAuditEntries = 3
@@ -189,21 +188,32 @@ func TestReportAuditCap(t *testing.T) {
 	env := newTestEnv(t)
 	ctx := context.Background()
 
-	stream := env.client.ReportAudit(ctx)
-	for i := 0; i < maxReportAuditEntries+1; i++ {
-		if err := stream.Send(&turnstilev1.AuditEntry{
+	entry := func() *turnstilev1.AuditEntry {
+		return &turnstilev1.AuditEntry{
 			ApiKeyId: "k", ApiKeyName: "n", Method: "REST", Path: "/x", Action: "svc:read", ResponseStatus: 200,
-		}); err != nil {
-			// The server may close the stream once the cap is hit; a Send error
-			// here is expected — stop sending and read the final status.
-			break
 		}
 	}
-	if _, err := stream.CloseAndReceive(); connect.CodeOf(err) != connect.CodeResourceExhausted {
+	batch := func(n int) *connect.Request[turnstilev1.ReportAuditRequest] {
+		entries := make([]*turnstilev1.AuditEntry, 0, n)
+		for i := 0; i < n; i++ {
+			entries = append(entries, entry())
+		}
+		return connect.NewRequest(&turnstilev1.ReportAuditRequest{Entries: entries})
+	}
+
+	// One past the cap: the whole batch is rejected, nothing persisted.
+	if _, err := env.client.ReportAudit(ctx, batch(maxReportAuditEntries+1)); connect.CodeOf(err) != connect.CodeResourceExhausted {
 		t.Fatalf("expected ResourceExhausted past the cap, got %v", connect.CodeOf(err))
 	}
 
-	// The entries accepted before the cap should have been persisted.
+	// A batch exactly at the cap is accepted and persisted.
+	summary, err := env.client.ReportAudit(ctx, batch(maxReportAuditEntries))
+	if err != nil {
+		t.Fatalf("ReportAudit at cap: %v", err)
+	}
+	if summary.Msg.Accepted != int64(maxReportAuditEntries) {
+		t.Errorf("expected %d accepted, got %d", maxReportAuditEntries, summary.Msg.Accepted)
+	}
 	waitForAudit(t, env, maxReportAuditEntries)
 }
 

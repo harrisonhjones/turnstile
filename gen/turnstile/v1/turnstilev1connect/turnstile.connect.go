@@ -67,8 +67,10 @@ type TurnstileClient interface {
 	// Authenticate resolves a client token to its Principal (identity only), for
 	// a "whoami"-style lookup. No authorization or rate limiting is performed.
 	Authenticate(context.Context, *connect.Request[v1.AuthenticateRequest]) (*connect.Response[v1.Principal], error)
-	// ReportAudit ingests a stream of audit entries for completed requests.
-	ReportAudit(context.Context) *connect.ClientStreamForClient[v1.AuditEntry, v1.ReportAuditSummary]
+	// ReportAudit ingests a batch of audit entries for completed requests. Unary
+	// (not client-streaming) so hosts can call it as plain JSON over HTTP: one
+	// POST with a JSON array of entries, no streaming client needed.
+	ReportAudit(context.Context, *connect.Request[v1.ReportAuditRequest]) (*connect.Response[v1.ReportAuditSummary], error)
 	// Management RPCs. All require an admin credential (see the service docs).
 	CreateKey(context.Context, *connect.Request[v1.CreateKeyRequest]) (*connect.Response[v1.Key], error)
 	ListKeys(context.Context, *connect.Request[v1.ListKeysRequest]) (*connect.Response[v1.ListKeysResponse], error)
@@ -103,7 +105,7 @@ func NewTurnstileClient(httpClient connect.HTTPClient, baseURL string, opts ...c
 			connect.WithSchema(turnstileMethods.ByName("Authenticate")),
 			connect.WithClientOptions(opts...),
 		),
-		reportAudit: connect.NewClient[v1.AuditEntry, v1.ReportAuditSummary](
+		reportAudit: connect.NewClient[v1.ReportAuditRequest, v1.ReportAuditSummary](
 			httpClient,
 			baseURL+TurnstileReportAuditProcedure,
 			connect.WithSchema(turnstileMethods.ByName("ReportAudit")),
@@ -164,7 +166,7 @@ func NewTurnstileClient(httpClient connect.HTTPClient, baseURL string, opts ...c
 type turnstileClient struct {
 	check        *connect.Client[v1.CheckRequest, v1.CheckResponse]
 	authenticate *connect.Client[v1.AuthenticateRequest, v1.Principal]
-	reportAudit  *connect.Client[v1.AuditEntry, v1.ReportAuditSummary]
+	reportAudit  *connect.Client[v1.ReportAuditRequest, v1.ReportAuditSummary]
 	createKey    *connect.Client[v1.CreateKeyRequest, v1.Key]
 	listKeys     *connect.Client[v1.ListKeysRequest, v1.ListKeysResponse]
 	getKey       *connect.Client[v1.GetKeyRequest, v1.Key]
@@ -186,8 +188,8 @@ func (c *turnstileClient) Authenticate(ctx context.Context, req *connect.Request
 }
 
 // ReportAudit calls turnstile.v1.Turnstile.ReportAudit.
-func (c *turnstileClient) ReportAudit(ctx context.Context) *connect.ClientStreamForClient[v1.AuditEntry, v1.ReportAuditSummary] {
-	return c.reportAudit.CallClientStream(ctx)
+func (c *turnstileClient) ReportAudit(ctx context.Context, req *connect.Request[v1.ReportAuditRequest]) (*connect.Response[v1.ReportAuditSummary], error) {
+	return c.reportAudit.CallUnary(ctx, req)
 }
 
 // CreateKey calls turnstile.v1.Turnstile.CreateKey.
@@ -239,8 +241,10 @@ type TurnstileHandler interface {
 	// Authenticate resolves a client token to its Principal (identity only), for
 	// a "whoami"-style lookup. No authorization or rate limiting is performed.
 	Authenticate(context.Context, *connect.Request[v1.AuthenticateRequest]) (*connect.Response[v1.Principal], error)
-	// ReportAudit ingests a stream of audit entries for completed requests.
-	ReportAudit(context.Context, *connect.ClientStream[v1.AuditEntry]) (*connect.Response[v1.ReportAuditSummary], error)
+	// ReportAudit ingests a batch of audit entries for completed requests. Unary
+	// (not client-streaming) so hosts can call it as plain JSON over HTTP: one
+	// POST with a JSON array of entries, no streaming client needed.
+	ReportAudit(context.Context, *connect.Request[v1.ReportAuditRequest]) (*connect.Response[v1.ReportAuditSummary], error)
 	// Management RPCs. All require an admin credential (see the service docs).
 	CreateKey(context.Context, *connect.Request[v1.CreateKeyRequest]) (*connect.Response[v1.Key], error)
 	ListKeys(context.Context, *connect.Request[v1.ListKeysRequest]) (*connect.Response[v1.ListKeysResponse], error)
@@ -271,7 +275,7 @@ func NewTurnstileHandler(svc TurnstileHandler, opts ...connect.HandlerOption) (s
 		connect.WithSchema(turnstileMethods.ByName("Authenticate")),
 		connect.WithHandlerOptions(opts...),
 	)
-	turnstileReportAuditHandler := connect.NewClientStreamHandler(
+	turnstileReportAuditHandler := connect.NewUnaryHandler(
 		TurnstileReportAuditProcedure,
 		svc.ReportAudit,
 		connect.WithSchema(turnstileMethods.ByName("ReportAudit")),
@@ -366,7 +370,7 @@ func (UnimplementedTurnstileHandler) Authenticate(context.Context, *connect.Requ
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("turnstile.v1.Turnstile.Authenticate is not implemented"))
 }
 
-func (UnimplementedTurnstileHandler) ReportAudit(context.Context, *connect.ClientStream[v1.AuditEntry]) (*connect.Response[v1.ReportAuditSummary], error) {
+func (UnimplementedTurnstileHandler) ReportAudit(context.Context, *connect.Request[v1.ReportAuditRequest]) (*connect.Response[v1.ReportAuditSummary], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("turnstile.v1.Turnstile.ReportAudit is not implemented"))
 }
 

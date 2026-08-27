@@ -30,7 +30,7 @@ why management is usable without a gRPC client.
   │  gateway   │◄────────┤    │     └─ policy.Evaluate + PolicyCache  │      api_keys
   │            │ verdict │    └─ ratelimit.Manager    (limits)       │      admin_credentials
   │            │         │                                           │      global_policy
-  │            ├────────►│  ReportAudit (stream) ─► audit.Writer ────┼──►   audit_log
+  │            ├────────►│  ReportAudit (batch) ──► audit.Writer ────┼──►   audit_log
   └────────────┘  audit  │                                           │
                          │  management RPCs (admin-guarded) ─────────┼──► store
                          │  /ui/  embedded Ionic React SPA           │
@@ -41,8 +41,10 @@ why management is usable without a gRPC client.
   verdict. It never writes audit, because status and latency are unknown until
   the host finishes serving the request.
 - **`Authenticate`** resolves a token to a `Principal` (whoami), nothing more.
-- **`ReportAudit`** is a client stream: the host buffers completed requests and
-  pushes them up afterward.
+- **`ReportAudit`** is a unary batch call: the host buffers completed requests
+  and POSTs them up afterward (one call, a JSON array of entries, up to a
+  server-enforced per-call cap). Unary rather than client-streaming so hosts can
+  call it as plain JSON over HTTP without a streaming client.
 - **Management RPCs** (`CreateKey`, …, `UpdatePolicy`, `QueryAudit`) require an
   admin credential and back the web UI.
 
@@ -167,10 +169,10 @@ On SIGINT/SIGTERM the sequence is:
 
 1. Stop the background loops (audit retention, rate-limiter eviction).
 2. `gate.Quiesce(timeout)` — stop accepting new RPCs (new calls get
-   `Unavailable`), cancel the in-flight handlers' contexts (so a long-lived
-   `ReportAudit` stream unwinds instead of waiting on the client), and wait for
-   in-flight calls to drain, **bounded** by the timeout. The wait can never hang
-   on a stuck or hostile client; if it elapses, shutdown proceeds anyway and at
+   `Unavailable`), cancel the in-flight handlers' contexts (so a slow handler
+   unwinds instead of waiting on the client), and wait for in-flight calls to
+   drain, **bounded** by the timeout. The wait can never hang on a stuck or
+   hostile client; if it elapses, shutdown proceeds anyway and at
    worst a few best-effort audit writes are lost.
 3. `srv.Shutdown` — stop the listener and close idle tracked connections.
 4. Drain the audit writer's queue (`Writer.Wait`) **before** the deferred

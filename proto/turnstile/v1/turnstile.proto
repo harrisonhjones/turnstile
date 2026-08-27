@@ -21,8 +21,10 @@ service Turnstile {
   // a "whoami"-style lookup. No authorization or rate limiting is performed.
   rpc Authenticate(AuthenticateRequest) returns (Principal);
 
-  // ReportAudit ingests a stream of audit entries for completed requests.
-  rpc ReportAudit(stream AuditEntry) returns (ReportAuditSummary);
+  // ReportAudit ingests a batch of audit entries for completed requests. Unary
+  // (not client-streaming) so hosts can call it as plain JSON over HTTP: one
+  // POST with a JSON array of entries, no streaming client needed.
+  rpc ReportAudit(ReportAuditRequest) returns (ReportAuditSummary);
 
   // Management RPCs. All require an admin credential (see the service docs).
   rpc CreateKey(CreateKeyRequest) returns (Key);
@@ -239,6 +241,10 @@ message AuditEntry {
   int32 response_status = 8;
   int64 latency_ms = 9;
   google.protobuf.Timestamp timestamp = 10;
+}
+
+message ReportAuditRequest {
+  repeated AuditEntry entries = 1; // at most a server-enforced cap per call
 }
 
 message ReportAuditSummary {
