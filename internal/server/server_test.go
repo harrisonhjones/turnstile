@@ -2,9 +2,11 @@ package server
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -15,6 +17,7 @@ import (
 	turnstilev1 "github.com/harrisonhjones/turnstile/gen/turnstile/v1"
 	"github.com/harrisonhjones/turnstile/gen/turnstile/v1/turnstilev1connect"
 	"github.com/harrisonhjones/turnstile/internal/audit"
+	"github.com/harrisonhjones/turnstile/internal/metrics"
 	"github.com/harrisonhjones/turnstile/internal/ratelimit"
 	"github.com/harrisonhjones/turnstile/internal/store"
 	"github.com/harrisonhjones/turnstile/internal/token"
@@ -37,8 +40,10 @@ func newTestEnv(t *testing.T) *testEnv {
 }
 
 // newTestEnvOpts builds an env; a non-empty serviceCred requires that credential
-// on the host-facing RPCs (Check/Authenticate/ReportAudit).
-func newTestEnvOpts(t *testing.T, serviceCred string) *testEnv {
+// on the host-facing RPCs (Check/Authenticate/ReportAudit). Optional wrap
+// functions decorate the Connect handler (e.g. the metrics Instrument
+// middleware) so tests can exercise the same wrapping main.go applies.
+func newTestEnvOpts(t *testing.T, serviceCred string, wrap ...func(http.Handler) http.Handler) *testEnv {
 	t.Helper()
 	ctx := context.Background()
 
@@ -73,6 +78,9 @@ func newTestEnvOpts(t *testing.T, serviceCred string) *testEnv {
 	})
 
 	path, handler := h.NewConnectHandler()
+	for _, w := range wrap {
+		handler = w(handler)
+	}
 	mux := http.NewServeMux()
 	mux.Handle(path, handler)
 	ts := httptest.NewServer(mux)
@@ -215,6 +223,45 @@ func TestReportAuditCap(t *testing.T) {
 		t.Errorf("expected %d accepted, got %d", maxReportAuditEntries, summary.Msg.Accepted)
 	}
 	waitForAudit(t, env, maxReportAuditEntries)
+}
+
+// TestCheckThroughMetricsInstrument exercises the real Connect handler wrapped by
+// the metrics Instrument middleware — the default (metrics-on) hot path that
+// main.go wires up. No other test covers it: the metrics package test wraps a
+// trivial HandlerFunc, and the other server tests build the handler unwrapped. It
+// confirms Check still works through the wrapper and that the request is counted.
+func TestCheckThroughMetricsInstrument(t *testing.T) {
+	m := metrics.Enable()
+	env := newTestEnvOpts(t, "", m.Instrument)
+	ctx := context.Background()
+
+	createReq := connect.NewRequest(&turnstilev1.CreateKeyRequest{
+		Name:       "reader",
+		Statements: []*turnstilev1.Statement{{Effect: turnstilev1.Effect_ALLOW, Actions: []string{"svc:read"}, Resources: []string{"svc:*"}}},
+	})
+	withAdmin(env, createReq)
+	created, err := env.client.CreateKey(ctx, createReq)
+	if err != nil {
+		t.Fatalf("CreateKey: %v", err)
+	}
+
+	resp, err := env.client.Check(ctx, connect.NewRequest(&turnstilev1.CheckRequest{
+		ClientToken: created.Msg.PlaintextToken, Action: "svc:read", Resources: []string{"svc:thing:1"},
+	}))
+	if err != nil {
+		t.Fatalf("Check through instrumented handler: %v", err)
+	}
+	if resp.Msg.Decision != turnstilev1.Decision_ALLOWED {
+		t.Fatalf("expected ALLOWED through instrumented handler, got %v", resp.Msg.Decision)
+	}
+
+	// The instrumented handler should have counted the request(s).
+	rec := httptest.NewRecorder()
+	m.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	body, _ := io.ReadAll(rec.Body)
+	if !strings.Contains(string(body), `turnstile_http_requests_total{code="200"}`) {
+		t.Errorf("expected turnstile_http_requests_total{code=\"200\"} in scrape, got:\n%s", body)
+	}
 }
 
 func TestRateLimitDoesNotBurnOnDeny(t *testing.T) {
