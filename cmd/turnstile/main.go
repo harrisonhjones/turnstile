@@ -248,7 +248,7 @@ func run() error {
 	// Stop accepting new RPCs, cancel in-flight handler contexts, and wait
 	// (bounded) for them to drain. This works on both the TLS and the hijacked
 	// h2c paths, unlike http.Server.Shutdown alone, which does not track h2c
-	// connections. A stuck/hostile stream can't hang us — the wait is bounded.
+	// connections. A stuck/hostile client can't hang us — the wait is bounded.
 	if !gate.Quiesce(8 * time.Second) {
 		slog.Warn("shutdown: some in-flight requests did not drain before the deadline; proceeding")
 	}

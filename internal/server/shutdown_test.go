@@ -47,7 +47,7 @@ func TestShutdownGateDrains(t *testing.T) {
 // it returns false at the deadline instead of blocking forever.
 func TestShutdownGateBoundedWait(t *testing.T) {
 	g := NewShutdownGate()
-	g.enter() // never leaves — simulates a client holding a stream open
+	g.enter() // never leaves — simulates a client holding a request open
 
 	start := time.Now()
 	if g.Quiesce(150 * time.Millisecond) {

@@ -18,13 +18,8 @@ import (
 // On shutdown, Quiesce stops accepting, cancels the root context (so a handler
 // blocked on slow work unwinds promptly instead of waiting on the client), and
 // then waits — bounded by a deadline — for in-flight calls to finish before the
-// caller drains the audit writer and closes the DB.
-//
-// The wait is always bounded: a slow or hostile client can never make shutdown
-// hang. This matters even though every RPC is now unary — on the plaintext h2c
-// path the HTTP/2 session runs on a hijacked connection that
-// http.Server.Shutdown neither tracks nor drains, so the gate's cancel + bounded
-// wait is the backstop for in-flight calls there.
+// caller drains the audit writer and closes the DB. The wait is always bounded,
+// so a slow or hostile client can never make shutdown hang.
 type ShutdownGate struct {
 	accepting atomic.Bool
 	inflight  atomic.Int64

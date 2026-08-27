@@ -5,7 +5,7 @@ keys, editing the global policy, browsing the audit log, and securing the
 host→Turnstile connection (service credential or mTLS).
 
 For the other side — how a host *service* calls `Check`/`Authenticate` and
-streams audit — see [CLIENT-INTEGRATION.md](CLIENT-INTEGRATION.md).
+batch-reports audit — see [CLIENT-INTEGRATION.md](CLIENT-INTEGRATION.md).
 
 All management RPCs are `POST /turnstile.v1.Turnstile/<Method>` (Connect
 HTTP/JSON) and require an **admin credential** as an `Authorization: Bearer`

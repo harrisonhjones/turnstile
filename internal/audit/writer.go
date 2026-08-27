@@ -1,6 +1,6 @@
 // Package audit records one entry per authenticated request. Hosts report
 // entries after a request completes (status and latency aren't known until
-// then) via the ReportAudit streaming RPC. The Writer persists them from a
+// then) via the ReportAudit RPC (a unary batch call). The Writer persists them from a
 // single background consumer so writes are serialized (matching SQLite's
 // single-writer model) and their id order tracks arrival, and it drains
 // in-flight entries at shutdown so the last ones aren't lost to a closing DB.
@@ -17,7 +17,7 @@ import (
 )
 
 // queueSize bounds the in-memory backlog of pending audit writes. Once full,
-// Write blocks (backpressure to the ReportAudit stream) rather than spawning
+// Write blocks (backpressure to the ReportAudit caller) rather than spawning
 // unbounded goroutines or growing memory without limit.
 const queueSize = 1024
 

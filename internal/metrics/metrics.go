@@ -29,7 +29,8 @@ var global *Metrics
 
 // Enable builds and registers the collectors (the standard Go runtime and
 // process collectors plus Turnstile's own) and stores the instance as the
-// process-wide global. Call it once at startup; it panics on a double register.
+// process-wide global. Call it once at startup: each call uses a fresh registry,
+// so a second call silently replaces the global rather than panicking.
 func Enable() *Metrics {
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(
@@ -62,8 +63,8 @@ func (m *Metrics) Handler() http.Handler {
 }
 
 // Instrument wraps an HTTP handler with request-count and duration metrics. The
-// promhttp delegators preserve http.Flusher and friends, so streaming handlers
-// are unaffected.
+// promhttp delegators preserve http.Flusher and friends, so flushing/streaming
+// responses (e.g. gRPC over HTTP/2) are unaffected.
 func (m *Metrics) Instrument(next http.Handler) http.Handler {
 	return promhttp.InstrumentHandlerCounter(m.httpReqs,
 		promhttp.InstrumentHandlerDuration(m.httpDur, next))
