@@ -145,8 +145,9 @@ tagging step. (`workflow_dispatch` is also available to run it by hand.)
 When a bump happens, the workflow tags `vX.Y.Z` and then, in order:
 
 - **GoReleaser** (`.goreleaser.yaml`) builds cross-platform binaries
-  (linux/darwin × amd64/arm64), checksums, and a grouped changelog, and publishes
-  a **GitHub Release**. The version is stamped into the binary via
+  (linux/darwin/windows × amd64/arm64; Windows ships as `.zip`, the rest as
+  `.tar.gz`), checksums, and a grouped changelog, and publishes a
+  **GitHub Release**. The version is stamped into the binary via
   `-ldflags -X main.version=…` (check with `turnstile -version`).
 - Then a multi-arch **container image** is built and pushed to **Docker Hub** as
   `harrisonhjones/turnstile:X.Y.Z` and `:latest`, and the Hub description is
