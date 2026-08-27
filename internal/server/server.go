@@ -44,9 +44,9 @@ const (
 )
 
 // maxReportAuditEntries bounds how many entries a single ReportAudit call may
-// stream, so one client can't hold an unbounded intake open. A host that has
-// more buffered should split them across calls. It is a var (not a const) only
-// so tests can lower it.
+// carry, so one call can't submit an unbounded batch. A host with more buffered
+// should split them across calls. It is a var (not a const) only so tests can
+// lower it.
 var maxReportAuditEntries = 10000
 
 // Deps are the collaborators a Handler needs.
@@ -222,6 +222,14 @@ func (h *Handler) ReportAudit(ctx context.Context, req *connect.Request[turnstil
 	}
 	var accepted int64
 	for _, pb := range entries {
+		// Unwind promptly if the handler context is cancelled (e.g. the
+		// ShutdownGate cancels it on shutdown) instead of working through the rest
+		// of the batch; return the partial count already persisted so the caller
+		// can retry the remainder. (Write itself drains on shutdown, so it won't
+		// stay blocked across this check.)
+		if ctx.Err() != nil {
+			break
+		}
 		entry := auditFromPB(pb)
 		if entry.Timestamp.IsZero() {
 			entry.Timestamp = h.now()
