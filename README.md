@@ -30,13 +30,25 @@ gRPC-wire-compatible while management is also plain `curl`- and browser-friendly
 Requires **Go** (version pinned in `go.mod`); SQLite is pure-Go, so there's no
 CGO or system SQLite to install.
 
-Builds use [mage](https://magefile.org) (`go install github.com/magefile/mage@latest`).
+**With `go install`** (no clone needed):
+
+```sh
+go install harrisonhjones.com/turnstile/cmd/turnstile@latest
+```
+
+This builds from source with the committed proto stubs and ships the **UI
+placeholder** (the console isn't compiled in). For the real console, grab a
+[release binary](https://github.com/harrisonhjones/turnstile/releases), run the
+[Docker image](#run-with-docker), or build from source with `mage build:all`.
+
+**From source** — builds use [mage](https://magefile.org)
+(`go install github.com/magefile/mage@latest`):
 
 ```sh
 git clone https://github.com/harrisonhjones/turnstile
 cd turnstile
 
-# Build the binary and run it. This uses the committed proto stubs and ships a
+# Build the binary and run it. Uses the committed proto stubs and ships the
 # UI placeholder, so nothing beyond Go and mage is needed:
 mage build:backend && ./turnstile
 
@@ -44,9 +56,10 @@ mage build:backend && ./turnstile
 # reload if `air` is installed).
 ```
 
-The full build — regenerating protos and compiling the web UI — is
-`mage build:all`, which needs extra tooling (buf, the protoc plugins, and Node);
-see [DEVELOPMENT.md](DEVELOPMENT.md). It isn't required just to run the service.
+The full build — regenerating protos and compiling the web UI into the binary —
+is `mage build:all`, which needs extra tooling (buf, the protoc plugins, and
+Node); see [DEVELOPMENT.md](DEVELOPMENT.md). It isn't required just to run the
+service.
 
 ## Run with Docker
 
