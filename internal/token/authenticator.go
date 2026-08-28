@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/harrisonhjones/turnstile/internal/store"
+	"harrisonhjones.com/turnstile/internal/store"
 )
 
 // touchInterval debounces last-used writes: at most one write per subject per

@@ -5,10 +5,10 @@ import (
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	turnstilev1 "github.com/harrisonhjones/turnstile/gen/turnstile/v1"
-	"github.com/harrisonhjones/turnstile/internal/policy"
-	"github.com/harrisonhjones/turnstile/internal/ratelimit"
-	"github.com/harrisonhjones/turnstile/internal/store"
+	turnstilev1 "harrisonhjones.com/turnstile/gen/turnstile/v1"
+	"harrisonhjones.com/turnstile/internal/policy"
+	"harrisonhjones.com/turnstile/internal/ratelimit"
+	"harrisonhjones.com/turnstile/internal/store"
 )
 
 // This file translates between the wire (turnstile.v1 protobuf) types and the

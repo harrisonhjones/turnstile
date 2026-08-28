@@ -1,4 +1,4 @@
-module github.com/harrisonhjones/turnstile
+module harrisonhjones.com/turnstile
 
 go 1.26.5
 

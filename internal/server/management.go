@@ -8,10 +8,10 @@ import (
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/emptypb"
 
-	turnstilev1 "github.com/harrisonhjones/turnstile/gen/turnstile/v1"
-	"github.com/harrisonhjones/turnstile/internal/policy"
-	"github.com/harrisonhjones/turnstile/internal/store"
-	"github.com/harrisonhjones/turnstile/internal/token"
+	turnstilev1 "harrisonhjones.com/turnstile/gen/turnstile/v1"
+	"harrisonhjones.com/turnstile/internal/policy"
+	"harrisonhjones.com/turnstile/internal/store"
+	"harrisonhjones.com/turnstile/internal/token"
 )
 
 // storeErr maps store sentinel errors to appropriate Connect codes.

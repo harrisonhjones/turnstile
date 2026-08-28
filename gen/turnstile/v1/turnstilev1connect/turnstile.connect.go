@@ -8,8 +8,8 @@ import (
 	connect "connectrpc.com/connect"
 	context "context"
 	errors "errors"
-	v1 "github.com/harrisonhjones/turnstile/gen/turnstile/v1"
 	emptypb "google.golang.org/protobuf/types/known/emptypb"
+	v1 "harrisonhjones.com/turnstile/gen/turnstile/v1"
 	http "net/http"
 	strings "strings"
 )

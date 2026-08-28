@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/harrisonhjones/turnstile/internal/config"
+	"harrisonhjones.com/turnstile/internal/config"
 )
 
 func TestBuildTLSConfig(t *testing.T) {

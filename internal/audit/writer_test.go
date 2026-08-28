@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/harrisonhjones/turnstile/internal/store"
+	"harrisonhjones.com/turnstile/internal/store"
 )
 
 func newTestStore(t *testing.T) *store.Store {

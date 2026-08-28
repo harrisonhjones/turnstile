@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/harrisonhjones/turnstile/internal/policy"
-	"github.com/harrisonhjones/turnstile/internal/store"
+	"harrisonhjones.com/turnstile/internal/policy"
+	"harrisonhjones.com/turnstile/internal/store"
 )
 
 func newTestStore(t *testing.T) *store.Store {

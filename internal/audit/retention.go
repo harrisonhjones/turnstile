@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/harrisonhjones/turnstile/internal/store"
+	"harrisonhjones.com/turnstile/internal/store"
 )
 
 // retentionInterval is how often the retention loop prunes. Audit growth is

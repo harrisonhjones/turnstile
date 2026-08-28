@@ -19,14 +19,14 @@ import (
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 
-	"github.com/harrisonhjones/turnstile/internal/audit"
-	"github.com/harrisonhjones/turnstile/internal/config"
-	"github.com/harrisonhjones/turnstile/internal/management"
-	"github.com/harrisonhjones/turnstile/internal/metrics"
-	"github.com/harrisonhjones/turnstile/internal/ratelimit"
-	"github.com/harrisonhjones/turnstile/internal/server"
-	"github.com/harrisonhjones/turnstile/internal/store"
-	"github.com/harrisonhjones/turnstile/internal/token"
+	"harrisonhjones.com/turnstile/internal/audit"
+	"harrisonhjones.com/turnstile/internal/config"
+	"harrisonhjones.com/turnstile/internal/management"
+	"harrisonhjones.com/turnstile/internal/metrics"
+	"harrisonhjones.com/turnstile/internal/ratelimit"
+	"harrisonhjones.com/turnstile/internal/server"
+	"harrisonhjones.com/turnstile/internal/store"
+	"harrisonhjones.com/turnstile/internal/token"
 )
 
 // Build metadata, set at release time via -ldflags "-X main.version=... -X

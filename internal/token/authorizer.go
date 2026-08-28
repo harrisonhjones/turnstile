@@ -1,8 +1,8 @@
 package token
 
 import (
-	"github.com/harrisonhjones/turnstile/internal/policy"
-	"github.com/harrisonhjones/turnstile/internal/store"
+	"harrisonhjones.com/turnstile/internal/policy"
+	"harrisonhjones.com/turnstile/internal/store"
 )
 
 // Authorizer evaluates whether an authenticated key may perform an action,

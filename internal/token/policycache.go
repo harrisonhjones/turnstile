@@ -3,8 +3,8 @@ package token
 import (
 	"sync"
 
-	"github.com/harrisonhjones/turnstile/internal/policy"
-	"github.com/harrisonhjones/turnstile/internal/store"
+	"harrisonhjones.com/turnstile/internal/policy"
+	"harrisonhjones.com/turnstile/internal/store"
 )
 
 // PolicyCache holds the current global policy in memory so authorization checks

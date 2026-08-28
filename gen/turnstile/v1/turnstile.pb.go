@@ -1940,7 +1940,7 @@ const file_turnstile_v1_turnstile_proto_rawDesc = "" +
 	"\tGetPolicy\x12\x1e.turnstile.v1.GetPolicyRequest\x1a\x14.turnstile.v1.Policy\x12G\n" +
 	"\fUpdatePolicy\x12!.turnstile.v1.UpdatePolicyRequest\x1a\x14.turnstile.v1.Policy\x12O\n" +
 	"\n" +
-	"QueryAudit\x12\x1f.turnstile.v1.QueryAuditRequest\x1a .turnstile.v1.QueryAuditResponseBBZ@github.com/harrisonhjones/turnstile/gen/turnstile/v1;turnstilev1b\x06proto3"
+	"QueryAudit\x12\x1f.turnstile.v1.QueryAuditRequest\x1a .turnstile.v1.QueryAuditResponseB;Z9harrisonhjones.com/turnstile/gen/turnstile/v1;turnstilev1b\x06proto3"
 
 var (
 	file_turnstile_v1_turnstile_proto_rawDescOnce sync.Once

@@ -92,8 +92,8 @@ import (
 	"connectrpc.com/connect"
 	"net/http"
 
-	turnstilev1 "github.com/harrisonhjones/turnstile/gen/turnstile/v1"
-	"github.com/harrisonhjones/turnstile/gen/turnstile/v1/turnstilev1connect"
+	turnstilev1 "harrisonhjones.com/turnstile/gen/turnstile/v1"
+	"harrisonhjones.com/turnstile/gen/turnstile/v1/turnstilev1connect"
 )
 
 client := turnstilev1connect.NewTurnstileClient(http.DefaultClient, "http://localhost:8080")

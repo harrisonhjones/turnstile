@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/harrisonhjones/turnstile/internal/policy"
-	"github.com/harrisonhjones/turnstile/internal/ratelimit"
+	"harrisonhjones.com/turnstile/internal/policy"
+	"harrisonhjones.com/turnstile/internal/ratelimit"
 )
 
 // GlobalPolicy is the singleton service policy.

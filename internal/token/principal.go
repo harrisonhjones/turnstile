@@ -3,7 +3,7 @@ package token
 import (
 	"context"
 
-	"github.com/harrisonhjones/turnstile/internal/store"
+	"harrisonhjones.com/turnstile/internal/store"
 )
 
 // Principal is the authenticated caller for a Check/Authenticate request: the

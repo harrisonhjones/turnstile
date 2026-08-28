@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/harrisonhjones/turnstile/internal/store"
+	"harrisonhjones.com/turnstile/internal/store"
 )
 
 // queueSize bounds the in-memory backlog of pending audit writes. Once full,

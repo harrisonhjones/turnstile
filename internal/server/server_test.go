@@ -14,13 +14,13 @@ import (
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	turnstilev1 "github.com/harrisonhjones/turnstile/gen/turnstile/v1"
-	"github.com/harrisonhjones/turnstile/gen/turnstile/v1/turnstilev1connect"
-	"github.com/harrisonhjones/turnstile/internal/audit"
-	"github.com/harrisonhjones/turnstile/internal/metrics"
-	"github.com/harrisonhjones/turnstile/internal/ratelimit"
-	"github.com/harrisonhjones/turnstile/internal/store"
-	"github.com/harrisonhjones/turnstile/internal/token"
+	turnstilev1 "harrisonhjones.com/turnstile/gen/turnstile/v1"
+	"harrisonhjones.com/turnstile/gen/turnstile/v1/turnstilev1connect"
+	"harrisonhjones.com/turnstile/internal/audit"
+	"harrisonhjones.com/turnstile/internal/metrics"
+	"harrisonhjones.com/turnstile/internal/ratelimit"
+	"harrisonhjones.com/turnstile/internal/store"
+	"harrisonhjones.com/turnstile/internal/token"
 )
 
 // testEnv is a running in-process Turnstile: a real store, handler, and HTTP
