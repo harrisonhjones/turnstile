@@ -116,7 +116,7 @@ func TestServiceEndToEnd(t *testing.T) {
 
 	// --- Check: allowed action ---
 	allowResp, err := env.client.Check(ctx, connect.NewRequest(&turnstilev1.CheckRequest{
-		ClientToken: clientToken, Action: "svc:read", Resources: []string{"svc:thing:1"}, CountRateLimit: true,
+		ClientToken: clientToken, Action: "svc:read", Resource: "svc:thing:1", CountRateLimit: true,
 	}))
 	if err != nil {
 		t.Fatalf("Check allowed: %v", err)
@@ -130,7 +130,7 @@ func TestServiceEndToEnd(t *testing.T) {
 
 	// --- Check: denied action (not granted) ---
 	denyResp, _ := env.client.Check(ctx, connect.NewRequest(&turnstilev1.CheckRequest{
-		ClientToken: clientToken, Action: "svc:write", Resources: []string{"svc:thing:1"},
+		ClientToken: clientToken, Action: "svc:write", Resource: "svc:thing:1",
 	}))
 	if denyResp.Msg.Allowed || denyResp.Msg.Decision != turnstilev1.Decision_POLICY_DENIED {
 		t.Errorf("expected POLICY_DENIED, got %+v", denyResp.Msg)
@@ -138,7 +138,7 @@ func TestServiceEndToEnd(t *testing.T) {
 
 	// --- Check: bad token is generically UNAUTHENTICATED ---
 	unauthResp, _ := env.client.Check(ctx, connect.NewRequest(&turnstilev1.CheckRequest{
-		ClientToken: "tsk_bogus", Action: "svc:read", Resources: []string{"svc:thing:1"},
+		ClientToken: "tsk_bogus", Action: "svc:read", Resource: "svc:thing:1",
 	}))
 	if unauthResp.Msg.Allowed || unauthResp.Msg.Decision != turnstilev1.Decision_UNAUTHENTICATED {
 		t.Errorf("expected UNAUTHENTICATED, got %+v", unauthResp.Msg)
@@ -153,26 +153,11 @@ func TestServiceEndToEnd(t *testing.T) {
 		t.Errorf("Authenticate key id mismatch: %q vs %q", who.Msg.KeyId, created.Msg.Id)
 	}
 
-	// --- ReportAudit (unary batch) ---
-	entries := make([]*turnstilev1.AuditEntry, 0, 3)
-	for i := 0; i < 3; i++ {
-		entries = append(entries, &turnstilev1.AuditEntry{
-			ApiKeyId: created.Msg.Id, ApiKeyName: "reader", Method: "REST", Path: "/x",
-			Action: "svc:read", ResponseStatus: 200, LatencyMs: 3,
-		})
-	}
-	summary, err := env.client.ReportAudit(ctx, connect.NewRequest(&turnstilev1.ReportAuditRequest{Entries: entries}))
-	if err != nil {
-		t.Fatalf("ReportAudit: %v", err)
-	}
-	if summary.Msg.Accepted != 3 {
-		t.Errorf("expected 3 accepted, got %d", summary.Msg.Accepted)
-	}
+	// --- QueryAudit reads back the Check auto-audit ---
+	// The three Checks above (allowed, policy-denied, unauthenticated) each wrote
+	// one svc: audit row; the CreateKey above wrote one turnstile: row → 4 total.
+	waitForAudit(t, env, 4)
 
-	// Audit writes are async; wait until visible.
-	waitForAudit(t, env, 3)
-
-	// --- QueryAudit ---
 	qReq := connect.NewRequest(&turnstilev1.QueryAuditRequest{ActionPrefix: "svc:", Limit: 10})
 	withAdmin(env, qReq)
 	q, err := env.client.QueryAudit(ctx, qReq)
@@ -180,48 +165,8 @@ func TestServiceEndToEnd(t *testing.T) {
 		t.Fatalf("QueryAudit: %v", err)
 	}
 	if len(q.Msg.Entries) != 3 {
-		t.Errorf("expected 3 audit entries, got %d", len(q.Msg.Entries))
+		t.Errorf("expected 3 svc: audit entries (the Checks), got %d", len(q.Msg.Entries))
 	}
-}
-
-// TestReportAuditCap verifies ReportAudit rejects a batch past the entry cap
-// with ResourceExhausted (the whole batch atomically — nothing persisted),
-// while a batch exactly at the cap is accepted.
-func TestReportAuditCap(t *testing.T) {
-	orig := maxReportAuditEntries
-	maxReportAuditEntries = 3
-	t.Cleanup(func() { maxReportAuditEntries = orig })
-
-	env := newTestEnv(t)
-	ctx := context.Background()
-
-	entry := func() *turnstilev1.AuditEntry {
-		return &turnstilev1.AuditEntry{
-			ApiKeyId: "k", ApiKeyName: "n", Method: "REST", Path: "/x", Action: "svc:read", ResponseStatus: 200,
-		}
-	}
-	batch := func(n int) *connect.Request[turnstilev1.ReportAuditRequest] {
-		entries := make([]*turnstilev1.AuditEntry, 0, n)
-		for i := 0; i < n; i++ {
-			entries = append(entries, entry())
-		}
-		return connect.NewRequest(&turnstilev1.ReportAuditRequest{Entries: entries})
-	}
-
-	// One past the cap: the whole batch is rejected, nothing persisted.
-	if _, err := env.client.ReportAudit(ctx, batch(maxReportAuditEntries+1)); connect.CodeOf(err) != connect.CodeResourceExhausted {
-		t.Fatalf("expected ResourceExhausted past the cap, got %v", connect.CodeOf(err))
-	}
-
-	// A batch exactly at the cap is accepted and persisted.
-	summary, err := env.client.ReportAudit(ctx, batch(maxReportAuditEntries))
-	if err != nil {
-		t.Fatalf("ReportAudit at cap: %v", err)
-	}
-	if summary.Msg.Accepted != int64(maxReportAuditEntries) {
-		t.Errorf("expected %d accepted, got %d", maxReportAuditEntries, summary.Msg.Accepted)
-	}
-	waitForAudit(t, env, maxReportAuditEntries)
 }
 
 // TestCheckThroughMetricsInstrument exercises the real Connect handler wrapped by
@@ -245,7 +190,7 @@ func TestCheckThroughMetricsInstrument(t *testing.T) {
 	}
 
 	resp, err := env.client.Check(ctx, connect.NewRequest(&turnstilev1.CheckRequest{
-		ClientToken: created.Msg.PlaintextToken, Action: "svc:read", Resources: []string{"svc:thing:1"},
+		ClientToken: created.Msg.PlaintextToken, Action: "svc:read", Resource: "svc:thing:1",
 	}))
 	if err != nil {
 		t.Fatalf("Check through instrumented handler: %v", err)
@@ -282,7 +227,7 @@ func TestRateLimitDoesNotBurnOnDeny(t *testing.T) {
 
 	check := func(count bool) *turnstilev1.CheckResponse {
 		resp, err := env.client.Check(ctx, connect.NewRequest(&turnstilev1.CheckRequest{
-			ClientToken: tok, Action: "svc:read", Resources: []string{"svc:thing:1"}, CountRateLimit: count,
+			ClientToken: tok, Action: "svc:read", Resource: "svc:thing:1", CountRateLimit: count,
 		}))
 		if err != nil {
 			t.Fatalf("Check: %v", err)
@@ -294,7 +239,7 @@ func TestRateLimitDoesNotBurnOnDeny(t *testing.T) {
 	// many denied writes, then the single read budget is still intact.
 	for i := 0; i < 5; i++ {
 		denied, err := env.client.Check(ctx, connect.NewRequest(&turnstilev1.CheckRequest{
-			ClientToken: tok, Action: "svc:write", Resources: []string{"svc:thing:1"}, CountRateLimit: true,
+			ClientToken: tok, Action: "svc:write", Resource: "svc:thing:1", CountRateLimit: true,
 		}))
 		if err != nil {
 			t.Fatalf("Check write: %v", err)
@@ -530,10 +475,10 @@ func TestManagementAuditing(t *testing.T) {
 	}
 	var createSeen, deniedSeen bool
 	for _, e := range q.Msg.Entries {
-		if e.Action == "turnstile:create-key" && e.Resource == created.Id && e.ResponseStatus == 200 {
+		if e.Action == "turnstile:create-key" && e.Resource == created.Id && e.Decision == turnstilev1.Decision_ALLOWED {
 			createSeen = true
 		}
-		if e.Action == "turnstile:list-keys" && e.ResponseStatus == 403 {
+		if e.Action == "turnstile:list-keys" && e.Decision == turnstilev1.Decision_POLICY_DENIED {
 			deniedSeen = true
 		}
 	}
@@ -551,7 +496,7 @@ func TestHostRPCsOpen(t *testing.T) {
 	env := newTestEnv(t)
 	ctx := context.Background()
 	resp, err := env.client.Check(ctx, connect.NewRequest(&turnstilev1.CheckRequest{
-		ClientToken: "tsk_bogus", Action: "svc:read", Resources: []string{"svc:x"},
+		ClientToken: "tsk_bogus", Action: "svc:read", Resource: "svc:x",
 	}))
 	if err != nil {
 		t.Fatalf("Check without a credential should not error: %v", err)
@@ -585,7 +530,7 @@ func TestGenericAuthFailureIndistinguishable(t *testing.T) {
 	}
 	for label, tok := range tokens {
 		resp, err := env.client.Check(ctx, connect.NewRequest(&turnstilev1.CheckRequest{
-			ClientToken: tok, Action: "svc:read", Resources: []string{"svc:thing:1"}, CountRateLimit: true,
+			ClientToken: tok, Action: "svc:read", Resource: "svc:thing:1", CountRateLimit: true,
 		}))
 		if err != nil {
 			t.Fatalf("%s: Check returned transport error: %v", label, err)
@@ -612,40 +557,38 @@ func TestGenericAuthFailureIndistinguishable(t *testing.T) {
 
 // TestCheckWritesNoAudit asserts the spec requirement that Check never writes an
 // audit entry (hosts report audit afterward via ReportAudit).
-func TestCheckWritesNoAudit(t *testing.T) {
+// TestCheckWritesAudit asserts Check records one audit row per decision, with
+// the decision captured.
+func TestCheckWritesAudit(t *testing.T) {
 	env := newTestEnv(t)
 	ctx := context.Background()
 	key := mustCreateKey(t, env, &turnstilev1.CreateKeyRequest{
 		Name: "k", Statements: []*turnstilev1.Statement{{Effect: turnstilev1.Effect_ALLOW, Actions: []string{"svc:read"}, Resources: []string{"svc:*"}}},
 	})
 
-	for i := 0; i < 5; i++ {
-		if _, err := env.client.Check(ctx, connect.NewRequest(&turnstilev1.CheckRequest{
-			ClientToken: key.PlaintextToken, Action: "svc:read", Resources: []string{"svc:thing:1"}, CountRateLimit: true,
-		})); err != nil {
-			t.Fatalf("Check: %v", err)
-		}
-	}
-	// Also a denied and an unauthenticated Check, to be thorough.
-	env.client.Check(ctx, connect.NewRequest(&turnstilev1.CheckRequest{ClientToken: key.PlaintextToken, Action: "svc:write", Resources: []string{"svc:x"}}))
-	env.client.Check(ctx, connect.NewRequest(&turnstilev1.CheckRequest{ClientToken: "tsk_nope", Action: "svc:read", Resources: []string{"svc:x"}}))
+	// allowed, policy-denied, unauthenticated
+	env.client.Check(ctx, connect.NewRequest(&turnstilev1.CheckRequest{ClientToken: key.PlaintextToken, Action: "svc:read", Resource: "svc:x", CountRateLimit: true}))
+	env.client.Check(ctx, connect.NewRequest(&turnstilev1.CheckRequest{ClientToken: key.PlaintextToken, Action: "svc:write", Resource: "svc:x"}))
+	env.client.Check(ctx, connect.NewRequest(&turnstilev1.CheckRequest{ClientToken: "tsk_nope", Action: "svc:read", Resource: "svc:x"}))
 
-	// Give any (erroneous) async write a chance to land, then assert none did.
-	time.Sleep(50 * time.Millisecond)
-	entries, _, err := env.store.ListAuditEntries(ctx, store.AuditFilter{Limit: 100})
+	// 1 CreateKey (management) + 3 Check rows = 4 total.
+	waitForAudit(t, env, 4)
+
+	got, _, err := env.store.ListAuditEntries(ctx, store.AuditFilter{ActionPrefix: "svc:", Limit: 100})
 	if err != nil {
 		t.Fatalf("list audit: %v", err)
 	}
-	// The only entries should be management self-audit (the CreateKey above);
-	// Check itself writes nothing.
-	var fromCheck int
-	for _, e := range entries {
-		if e.Method != "MANAGE" {
-			fromCheck++
-		}
+	if len(got) != 3 {
+		t.Errorf("expected 3 svc: Check audit rows, got %d", len(got))
 	}
-	if fromCheck != 0 {
-		t.Errorf("Check must not write audit; found %d non-management entries", fromCheck)
+	seen := map[string]bool{}
+	for _, e := range got {
+		seen[e.Decision] = true
+	}
+	for _, want := range []string{"ALLOWED", "POLICY_DENIED", "UNAUTHENTICATED"} {
+		if !seen[want] {
+			t.Errorf("expected a Check audit row with decision %s; got %v", want, seen)
+		}
 	}
 }
 
@@ -678,14 +621,14 @@ func TestGlobalDenyCeilingOverWire(t *testing.T) {
 
 	// svc:danger is denied by the ceiling despite the key's svc:* allow.
 	danger, _ := env.client.Check(ctx, connect.NewRequest(&turnstilev1.CheckRequest{
-		ClientToken: key.PlaintextToken, Action: "svc:danger", Resources: []string{"svc:x"},
+		ClientToken: key.PlaintextToken, Action: "svc:danger", Resource: "svc:x",
 	}))
 	if danger.Msg.Allowed || danger.Msg.Decision != turnstilev1.Decision_POLICY_DENIED {
 		t.Errorf("svc:danger should be POLICY_DENIED by the ceiling, got %+v", danger.Msg)
 	}
 	// A sibling action the key allows is still permitted.
 	ok, _ := env.client.Check(ctx, connect.NewRequest(&turnstilev1.CheckRequest{
-		ClientToken: key.PlaintextToken, Action: "svc:read", Resources: []string{"svc:x"},
+		ClientToken: key.PlaintextToken, Action: "svc:read", Resource: "svc:x",
 	}))
 	if !ok.Msg.Allowed {
 		t.Errorf("svc:read should still be allowed, got %+v", ok.Msg)
@@ -799,7 +742,7 @@ func TestConcurrentCheckAndPolicyUpdate(t *testing.T) {
 			defer wg.Done()
 			for j := 0; j < 25; j++ {
 				if _, err := env.client.Check(ctx, connect.NewRequest(&turnstilev1.CheckRequest{
-					ClientToken: key.PlaintextToken, Action: "svc:read", Resources: []string{"svc:x"}, CountRateLimit: true,
+					ClientToken: key.PlaintextToken, Action: "svc:read", Resource: "svc:x", CountRateLimit: true,
 				})); err != nil {
 					t.Errorf("Check: %v", err)
 					return

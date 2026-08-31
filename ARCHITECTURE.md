@@ -28,26 +28,21 @@ why management is usable without a gRPC client.
   │            ├────────►│    ├─ token.Authenticator  (authn)        │
   │  proxy /   │         │    ├─ token.Authorizer     (authz)        │──► store (SQLite)
   │  gateway   │◄────────┤    │     └─ policy.Evaluate + PolicyCache  │      api_keys
-  │            │ verdict │    └─ ratelimit.Manager    (limits)       │      global_policy
-  │            │         │                                           │      audit_log
-  │            ├────────►│  ReportAudit (batch) ──► audit.Writer ────┼──►   store
-  └────────────┘  audit  │                                           │
+  │            │ verdict │    ├─ ratelimit.Manager    (limits)       │      global_policy
+  │            │         │    └─ audit.Writer (row per decision) ────┼──►   audit_log
+  └────────────┘         │                                           │
                          │  management RPCs (turnstile:-guarded) ────┼──► store
                          │  /ui/  embedded Ionic React SPA           │
                          └─────────────────────────────────────────┘
 ```
 
 - **`Check`** (hot path) runs authn → authz → rate limiting and returns a
-  verdict. It never writes audit, because status and latency are unknown until
-  the host finishes serving the request.
+  verdict, recording one audit row per decision (ALLOWED / POLICY_DENIED /
+  RATE_LIMITED / UNAUTHENTICATED) asynchronously off the hot path.
 - **`Authenticate`** resolves a token to a `Principal` (whoami), nothing more.
-- **`ReportAudit`** is a unary batch call: the host buffers completed requests
-  and POSTs them up afterward (one call, a JSON array of entries, up to a
-  server-enforced per-call cap). Unary rather than client-streaming so hosts can
-  call it as plain JSON over HTTP without a streaming client.
 - **Management RPCs** (`CreateKey`, …, `UpdatePolicy`, `QueryAudit`) require the
   caller's own key to allow the matching `turnstile:<op>` action, and back the
-  web UI.
+  web UI. They self-audit mutations (on success) and denied attempts.
 
 ## Packages
 
@@ -128,7 +123,7 @@ lockout). Because a key with `turnstile:update-policy` or `turnstile:update-key`
 on itself can grant itself more capability, admin is inherently self-escalating —
 scope those grants deliberately.
 
-The host-facing RPCs (`Check`/`Authenticate`/`ReportAudit`) are **app-layer
+The host-facing RPCs (`Check`/`Authenticate`) are **app-layer
 open** — there is no service credential; guard them with optional mTLS / network
 isolation. On first start against an empty key store, a full-admin bootstrap key
 is seeded and its token logged once; the `-bootstrap` flag (or
@@ -182,7 +177,7 @@ sub-second boundaries).
 
 `http.Server.Shutdown` alone is insufficient here: without TLS the gRPC hot path
 runs over `h2c` on a **hijacked** connection, which `Shutdown` neither tracks nor
-drains, so it can return while `Check`/`ReportAudit` handlers are still running.
+drains, so it can return while `Check` handlers are still running.
 A `ShutdownGate` (a Connect interceptor, `internal/server/shutdown.go`) closes
 that gap.
 

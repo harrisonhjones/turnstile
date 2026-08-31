@@ -4,8 +4,8 @@ This guide is for **operators**: running Turnstile, minting and managing API
 keys, editing the global policy, browsing the audit log, and securing the
 host→Turnstile connection (mTLS or network isolation).
 
-For the other side — how a host *service* calls `Check`/`Authenticate` and
-batch-reports audit — see [CLIENT-INTEGRATION.md](CLIENT-INTEGRATION.md).
+For the other side — how a host *service* calls `Check`/`Authenticate` — see
+[CLIENT-INTEGRATION.md](CLIENT-INTEGRATION.md).
 
 All management RPCs are `POST /turnstile.v1.Turnstile/<Method>` (Connect
 HTTP/JSON) and require a **management key** — an API key whose own policy allows
@@ -232,22 +232,25 @@ or loosen specific actions via its own `rateLimits` map (`CreateKey`/`UpdateKey`
 
 ## Auditing
 
-The audit log has two sources:
+Turnstile records the audit trail itself; there is no host-reported intake. It
+has two sources:
 
-- **Host-reported request audit.** Hosts report one row per completed request
-  *after the fact* via `ReportAudit`; the `Check` hot path itself never writes
-  audit (status and latency aren't known until the host finishes). A denied
-  `Check` is therefore only in the log if the host reported it.
+- **`Check` decisions.** The `Check` hot path writes one row per decision —
+  `ALLOWED`, `POLICY_DENIED`, `RATE_LIMITED`, or `UNAUTHENTICATED` — recorded
+  asynchronously off the hot path. An unauthenticated `Check` has an empty
+  `api_key_id`.
 - **Management-plane self-audit.** Turnstile records its own management actions
-  directly (`method` = `MANAGE`): every **mutation** on success (`create`/
-  `update`/`rotate`/`delete`-key and `update-policy`) and every **denied**
-  attempt (an authenticated key that lacked the `turnstile:` grant → status
-  `403`). Successful reads (`list`/`get`/`query-audit`/`read-policy`) are not
-  audited, to keep the log signal-heavy. The entry's `api_key_id` is the caller's
-  key and `action` is the `turnstile:<op>`.
+  directly: every **mutation** on success (`create`/`update`/`rotate`/`delete`-key
+  and `update-policy`) and every **denied** attempt (an authenticated key that
+  lacked the `turnstile:` grant → decision `POLICY_DENIED`). Successful reads
+  (`list`/`get`/`query-audit`/`read-policy`) are not audited, to keep the log
+  signal-heavy. The entry's `api_key_id` is the caller's key and `action` is the
+  `turnstile:<op>`.
 
-Query the log with `QueryAudit`, filterable by key, action-namespace prefix,
-method, status, and time range, with keyset pagination (e.g. `"method": "MANAGE"`
+Each entry has just five fields: `api_key_id`, `action`, `resource`, `decision`,
+and `timestamp`. Query the log with `QueryAudit`, filterable by key
+(`apiKeyId`), action-namespace prefix (`actionPrefix`), decision, and time range
+(`after`/`before`), with keyset pagination (e.g. `"actionPrefix": "turnstile:"`
 for just the management trail):
 
 ```sh
@@ -255,7 +258,7 @@ curl -sS http://localhost:8080/turnstile.v1.Turnstile/QueryAudit \
   -H "Content-Type: application/json" -H "Authorization: Bearer $MGMT_TOKEN" \
   -d '{
     "actionPrefix": "photos:",
-    "status": 403,
+    "decision": "POLICY_DENIED",
     "after": "2026-08-01T00:00:00Z",
     "limit": 100
   }'
@@ -270,7 +273,7 @@ exhausted). The same view is available in the web console's Audit tab. Retention
 
 Authorization keys off the namespaced action and the presented client token —
 never the calling host's identity. The service-facing RPCs (`Check`,
-`Authenticate`, `ReportAudit`) are **open at the application layer** — there is
+`Authenticate`) are **open at the application layer** — there is
 no service credential to configure. Control *which hosts* may reach them at the
 transport/network layer, with **optional mTLS** and/or network isolation.
 

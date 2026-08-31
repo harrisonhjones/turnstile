@@ -11,8 +11,8 @@
 //     action on the target resource (see requireManage). Management is evaluated
 //     against the caller key's own statements only — the global deny-only ceiling
 //     does not gate it.
-//   - The host-facing RPCs (Check, Authenticate, ReportAudit) are open at the
-//     application layer; deployments guard them with mTLS or network isolation.
+//   - The host-facing RPCs (Check, Authenticate) are open at the application
+//     layer; deployments guard them with mTLS or network isolation.
 //
 // Authorization of the end user's request (the Check hot path) keys off the
 // namespaced action and the presented client token, never the calling host's
@@ -43,12 +43,6 @@ const (
 	defaultAuditPageSize = 100
 	maxAuditPageSize     = 1000
 )
-
-// maxReportAuditEntries bounds how many entries a single ReportAudit call may
-// carry, so one call can't submit an unbounded batch. A host with more buffered
-// should split them across calls. It is a var (not a const) only so tests can
-// lower it.
-var maxReportAuditEntries = 10000
 
 // Deps are the collaborators a Handler needs.
 type Deps struct {
@@ -119,7 +113,7 @@ func (h *Handler) requireManage(ctx context.Context, hdr http.Header, action str
 		}
 		// Self-audit the denied attempt: an authenticated key that lacked the grant
 		// is a security-relevant signal.
-		h.writeManageAudit(principal.Key, action, res, http.StatusForbidden)
+		h.writeManageAudit(principal.Key, action, res, turnstilev1.Decision_POLICY_DENIED)
 		return nil, connect.NewError(connect.CodePermissionDenied, fmt.Errorf("key is not permitted to %s", action))
 	}
 	return principal.Key, nil
@@ -130,19 +124,17 @@ func (h *Handler) requireManage(ctx context.Context, hdr http.Header, action str
 // RPCs — successful mutations and denied (PermissionDenied) attempts — because it
 // is the authority for turnstile:* actions. This is distinct from the Check hot
 // path, whose audit is host-reported via ReportAudit.
-func (h *Handler) writeManageAudit(caller *store.APIKey, action, resource string, status int) {
-	var id, name string
+func (h *Handler) writeManageAudit(caller *store.APIKey, action, resource string, d turnstilev1.Decision) {
+	var id string
 	if caller != nil {
-		id, name = caller.ID, caller.Name
+		id = caller.ID
 	}
 	h.auditWriter.Write(&store.AuditEntry{
-		APIKeyID:       id,
-		APIKeyName:     name,
-		Method:         "MANAGE",
-		Action:         action,
-		Resource:       resource,
-		ResponseStatus: status,
-		Timestamp:      h.now(),
+		APIKeyID:  id,
+		Action:    action,
+		Resource:  resource,
+		Decision:  d.String(),
+		Timestamp: h.now(),
 	})
 }
 
@@ -161,6 +153,7 @@ func (h *Handler) Check(ctx context.Context, req *connect.Request[turnstilev1.Ch
 			// disabled vs expired (no token-existence leak).
 			slog.Debug("check: rejected token", "reason", err)
 			metrics.RecordCheck("unauthenticated")
+			h.recordCheckAudit("", r.Action, r.Resource, turnstilev1.Decision_UNAUTHENTICATED)
 			return connect.NewResponse(&turnstilev1.CheckResponse{
 				Allowed:  false,
 				Decision: turnstilev1.Decision_UNAUTHENTICATED,
@@ -172,9 +165,10 @@ func (h *Handler) Check(ctx context.Context, req *connect.Request[turnstilev1.Ch
 
 	pbPrincipal := principalToPB(principal.Key)
 
-	decision := h.authorizer.Authorize(principal.Key, r.Action, r.Resources...)
+	decision := h.authorizer.Authorize(principal.Key, r.Action, r.Resource)
 	if !decision.Allowed {
 		metrics.RecordCheck("policy_denied")
+		h.recordCheckAudit(principal.Key.ID, r.Action, r.Resource, turnstilev1.Decision_POLICY_DENIED)
 		return connect.NewResponse(&turnstilev1.CheckResponse{
 			Allowed:   false,
 			Principal: pbPrincipal,
@@ -187,6 +181,7 @@ func (h *Handler) Check(ctx context.Context, req *connect.Request[turnstilev1.Ch
 		ok, retryAfter := h.rateLimiter.Allow(principal.Key.ID, principal.Key.RateLimits, r.Action)
 		if !ok {
 			metrics.RecordCheck("rate_limited")
+			h.recordCheckAudit(principal.Key.ID, r.Action, r.Resource, turnstilev1.Decision_RATE_LIMITED)
 			return connect.NewResponse(&turnstilev1.CheckResponse{
 				Allowed:   false,
 				Principal: pbPrincipal,
@@ -200,12 +195,26 @@ func (h *Handler) Check(ctx context.Context, req *connect.Request[turnstilev1.Ch
 	}
 
 	metrics.RecordCheck("allowed")
+	h.recordCheckAudit(principal.Key.ID, r.Action, r.Resource, turnstilev1.Decision_ALLOWED)
 	return connect.NewResponse(&turnstilev1.CheckResponse{
 		Allowed:   true,
 		Principal: pbPrincipal,
 		Decision:  turnstilev1.Decision_ALLOWED,
 		RateLimit: &turnstilev1.RateLimitVerdict{Limited: false},
 	}), nil
+}
+
+// recordCheckAudit writes one audit row for a Check decision (best-effort;
+// drop-on-full, never blocks the hot path). keyID is empty for an
+// unauthenticated Check.
+func (h *Handler) recordCheckAudit(keyID, action, resource string, d turnstilev1.Decision) {
+	h.auditWriter.Write(&store.AuditEntry{
+		APIKeyID:  keyID,
+		Action:    action,
+		Resource:  resource,
+		Decision:  d.String(),
+		Timestamp: h.now(),
+	})
 }
 
 // Authenticate resolves a client token to its Principal (identity only).
@@ -220,38 +229,6 @@ func (h *Handler) Authenticate(ctx context.Context, req *connect.Request[turnsti
 		return nil, connect.NewError(connect.CodeInternal, errors.New("authentication failed"))
 	}
 	return connect.NewResponse(principalToPB(principal.Key)), nil
-}
-
-// ReportAudit ingests a batch of audit entries and persists them in the
-// background. It returns the count accepted. Unary (not client-streaming) so
-// hosts can call it as plain JSON: one POST with a JSON array of entries.
-func (h *Handler) ReportAudit(ctx context.Context, req *connect.Request[turnstilev1.ReportAuditRequest]) (*connect.Response[turnstilev1.ReportAuditSummary], error) {
-	entries := req.Msg.Entries
-	if len(entries) > maxReportAuditEntries {
-		return nil, connect.NewError(connect.CodeResourceExhausted,
-			fmt.Errorf("ReportAudit accepts at most %d entries per call; split into multiple calls", maxReportAuditEntries))
-	}
-	var accepted int64
-	for _, pb := range entries {
-		// Unwind promptly if the handler context is cancelled (e.g. the
-		// ShutdownGate cancels it on shutdown) instead of working through the rest
-		// of the batch; return the partial count already persisted so the caller
-		// can retry the remainder. (Write itself drains on shutdown, so it won't
-		// stay blocked across this check.)
-		if ctx.Err() != nil {
-			break
-		}
-		entry := auditFromPB(pb)
-		if entry.Timestamp.IsZero() {
-			entry.Timestamp = h.now()
-		}
-		// Count only entries the writer actually accepted, so the returned total
-		// never over-reports (e.g. an entry dropped because shutdown began).
-		if h.auditWriter.Write(entry) {
-			accepted++
-		}
-	}
-	return connect.NewResponse(&turnstilev1.ReportAuditSummary{Accepted: accepted}), nil
 }
 
 // isAuthnFailure reports whether err is one of the client-facing token

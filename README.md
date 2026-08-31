@@ -19,8 +19,8 @@ counts every entry (audit).
   — via an API or the built-in web console.
 - **A single, tamper-resistant policy point.** A global deny-only "ceiling"
   applies on top of every key, so you can revoke a capability everywhere at once.
-- **An audit trail.** Hosts report each completed request; browse and filter it
-  by key, action, status, and time.
+- **An audit trail.** Turnstile records every access decision and management
+  change itself; browse and filter it by key, action, decision, and time.
 
 It speaks [Connect](https://connectrpc.com), so the hot path is
 gRPC-wire-compatible while management is also plain `curl`- and browser-friendly.
@@ -100,8 +100,7 @@ copy `.env.example` to `.env` to customize. See
 - **[DEVELOPMENT.md](DEVELOPMENT.md)** — building, testing, configuration, and
   contributing.
 - **[CLIENT-INTEGRATION.md](CLIENT-INTEGRATION.md)** — for host services: how to
-  call `Check`/`Authenticate` and batch-report via `ReportAudit` (with `curl` and
-  Go examples).
+  call `Check`/`Authenticate` (with `curl` and Go examples).
 - **[ADMINISTRATION.md](ADMINISTRATION.md)** — for operators: running the
   service, minting/managing keys, editing policy, auditing, and securing
   host→Turnstile (mTLS or network isolation).

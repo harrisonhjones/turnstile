@@ -21,8 +21,7 @@ func newTestStore(t *testing.T) *store.Store {
 
 func entry(id string) *store.AuditEntry {
 	return &store.AuditEntry{
-		Timestamp: time.Now(), APIKeyID: id, APIKeyName: "n", Method: "REST",
-		Path: "/p", Action: "svc:read", ResponseStatus: 200,
+		Timestamp: time.Now(), APIKeyID: id, Action: "svc:read", Resource: "svc:x", Decision: "ALLOWED",
 	}
 }
 
@@ -80,10 +79,10 @@ func TestRunRetentionPrunes(t *testing.T) {
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
 
 	// One entry two days old (should be pruned with a 1-day window) and one now.
-	if err := s.InsertAuditEntry(ctx, &store.AuditEntry{Timestamp: now.AddDate(0, 0, -2), APIKeyID: "old", APIKeyName: "n", Method: "REST", Path: "/p", ResponseStatus: 200}); err != nil {
+	if err := s.InsertAuditEntry(ctx, &store.AuditEntry{Timestamp: now.AddDate(0, 0, -2), APIKeyID: "old", Action: "svc:read", Decision: "ALLOWED"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.InsertAuditEntry(ctx, &store.AuditEntry{Timestamp: now, APIKeyID: "new", APIKeyName: "n", Method: "REST", Path: "/p", ResponseStatus: 200}); err != nil {
+	if err := s.InsertAuditEntry(ctx, &store.AuditEntry{Timestamp: now, APIKeyID: "new", Action: "svc:read", Decision: "ALLOWED"}); err != nil {
 		t.Fatal(err)
 	}
 

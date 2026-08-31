@@ -1138,14 +1138,13 @@ type CheckRequest struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	ClientToken string                 `protobuf:"bytes,1,opt,name=client_token,json=clientToken,proto3" json:"client_token,omitempty"` // the API key presented by the end user/agent
 	Action      string                 `protobuf:"bytes,2,opt,name=action,proto3" json:"action,omitempty"`                              // service-namespaced, e.g. "photos:getAlbum"
-	// resources identifies the target object; e.g. ["photos:album:a1b2"]. Matched
-	// as OR (a statement matches if any resource matches). At least one resource
-	// is REQUIRED: a statement matches a resource pattern, so a Check with no
-	// resources always evaluates to a deny — even under an allow-all key. Actions
-	// that don't name a concrete object should pass a stable synthetic resource
-	// (e.g. "photos:account:acct_42" or a "svc:*"-style capability resource).
-	Resources      []string `protobuf:"bytes,3,rep,name=resources,proto3" json:"resources,omitempty"`
-	CountRateLimit bool     `protobuf:"varint,4,opt,name=count_rate_limit,json=countRateLimit,proto3" json:"count_rate_limit,omitempty"` // consume budget (only when authn + authz pass)
+	// resource identifies the target object, e.g. "photos:album:a1b2". REQUIRED: a
+	// statement matches by resource pattern, so a Check with an empty resource
+	// always evaluates to a deny — even under an allow-all key. Actions that don't
+	// name a concrete object should pass a stable synthetic resource (e.g.
+	// "photos:account:acct_42" or a "svc:*"-style capability resource).
+	Resource       string `protobuf:"bytes,3,opt,name=resource,proto3" json:"resource,omitempty"`
+	CountRateLimit bool   `protobuf:"varint,4,opt,name=count_rate_limit,json=countRateLimit,proto3" json:"count_rate_limit,omitempty"` // consume budget (only when authn + authz pass)
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -1194,11 +1193,11 @@ func (x *CheckRequest) GetAction() string {
 	return ""
 }
 
-func (x *CheckRequest) GetResources() []string {
+func (x *CheckRequest) GetResource() string {
 	if x != nil {
-		return x.Resources
+		return x.Resource
 	}
-	return nil
+	return ""
 }
 
 func (x *CheckRequest) GetCountRateLimit() bool {
@@ -1432,20 +1431,18 @@ func (x *AuthenticateRequest) GetClientToken() string {
 	return ""
 }
 
+// AuditEntry is one recorded decision. Turnstile records these itself — `Check`
+// writes one per decision, and the management RPCs self-audit mutations and
+// denied attempts — so there is no host-reported audit intake.
 type AuditEntry struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	ApiKeyId       string                 `protobuf:"bytes,1,opt,name=api_key_id,json=apiKeyId,proto3" json:"api_key_id,omitempty"`
-	ApiKeyName     string                 `protobuf:"bytes,2,opt,name=api_key_name,json=apiKeyName,proto3" json:"api_key_name,omitempty"` // denormalized; survives rename/delete
-	Method         string                 `protobuf:"bytes,3,opt,name=method,proto3" json:"method,omitempty"`                             // "REST"|"MCP"|… (host-defined)
-	Path           string                 `protobuf:"bytes,4,opt,name=path,proto3" json:"path,omitempty"`
-	Action         string                 `protobuf:"bytes,5,opt,name=action,proto3" json:"action,omitempty"` // namespaced
-	Resource       string                 `protobuf:"bytes,6,opt,name=resource,proto3" json:"resource,omitempty"`
-	RequestSummary string                 `protobuf:"bytes,7,opt,name=request_summary,json=requestSummary,proto3" json:"request_summary,omitempty"` // non-sensitive; never message text
-	ResponseStatus int32                  `protobuf:"varint,8,opt,name=response_status,json=responseStatus,proto3" json:"response_status,omitempty"`
-	LatencyMs      int64                  `protobuf:"varint,9,opt,name=latency_ms,json=latencyMs,proto3" json:"latency_ms,omitempty"`
-	Timestamp      *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ApiKeyId      string                 `protobuf:"bytes,1,opt,name=api_key_id,json=apiKeyId,proto3" json:"api_key_id,omitempty"`           // the acting key's id; empty for an unauthenticated Check
+	Action        string                 `protobuf:"bytes,2,opt,name=action,proto3" json:"action,omitempty"`                                 // namespaced action evaluated (host "svc:*" or "turnstile:*")
+	Resource      string                 `protobuf:"bytes,3,opt,name=resource,proto3" json:"resource,omitempty"`                             // the target resource
+	Decision      Decision               `protobuf:"varint,4,opt,name=decision,proto3,enum=turnstile.v1.Decision" json:"decision,omitempty"` // the outcome (ALLOWED / POLICY_DENIED / RATE_LIMITED / UNAUTHENTICATED)
+	Timestamp     *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *AuditEntry) Reset() {
@@ -1485,27 +1482,6 @@ func (x *AuditEntry) GetApiKeyId() string {
 	return ""
 }
 
-func (x *AuditEntry) GetApiKeyName() string {
-	if x != nil {
-		return x.ApiKeyName
-	}
-	return ""
-}
-
-func (x *AuditEntry) GetMethod() string {
-	if x != nil {
-		return x.Method
-	}
-	return ""
-}
-
-func (x *AuditEntry) GetPath() string {
-	if x != nil {
-		return x.Path
-	}
-	return ""
-}
-
 func (x *AuditEntry) GetAction() string {
 	if x != nil {
 		return x.Action
@@ -1520,25 +1496,11 @@ func (x *AuditEntry) GetResource() string {
 	return ""
 }
 
-func (x *AuditEntry) GetRequestSummary() string {
+func (x *AuditEntry) GetDecision() Decision {
 	if x != nil {
-		return x.RequestSummary
+		return x.Decision
 	}
-	return ""
-}
-
-func (x *AuditEntry) GetResponseStatus() int32 {
-	if x != nil {
-		return x.ResponseStatus
-	}
-	return 0
-}
-
-func (x *AuditEntry) GetLatencyMs() int64 {
-	if x != nil {
-		return x.LatencyMs
-	}
-	return 0
+	return Decision_ALLOWED
 }
 
 func (x *AuditEntry) GetTimestamp() *timestamppb.Timestamp {
@@ -1548,112 +1510,22 @@ func (x *AuditEntry) GetTimestamp() *timestamppb.Timestamp {
 	return nil
 }
 
-type ReportAuditRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Entries       []*AuditEntry          `protobuf:"bytes,1,rep,name=entries,proto3" json:"entries,omitempty"` // at most a server-enforced cap per call
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ReportAuditRequest) Reset() {
-	*x = ReportAuditRequest{}
-	mi := &file_turnstile_v1_turnstile_proto_msgTypes[22]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ReportAuditRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ReportAuditRequest) ProtoMessage() {}
-
-func (x *ReportAuditRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_turnstile_v1_turnstile_proto_msgTypes[22]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ReportAuditRequest.ProtoReflect.Descriptor instead.
-func (*ReportAuditRequest) Descriptor() ([]byte, []int) {
-	return file_turnstile_v1_turnstile_proto_rawDescGZIP(), []int{22}
-}
-
-func (x *ReportAuditRequest) GetEntries() []*AuditEntry {
-	if x != nil {
-		return x.Entries
-	}
-	return nil
-}
-
-type ReportAuditSummary struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Accepted      int64                  `protobuf:"varint,1,opt,name=accepted,proto3" json:"accepted,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ReportAuditSummary) Reset() {
-	*x = ReportAuditSummary{}
-	mi := &file_turnstile_v1_turnstile_proto_msgTypes[23]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ReportAuditSummary) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ReportAuditSummary) ProtoMessage() {}
-
-func (x *ReportAuditSummary) ProtoReflect() protoreflect.Message {
-	mi := &file_turnstile_v1_turnstile_proto_msgTypes[23]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ReportAuditSummary.ProtoReflect.Descriptor instead.
-func (*ReportAuditSummary) Descriptor() ([]byte, []int) {
-	return file_turnstile_v1_turnstile_proto_rawDescGZIP(), []int{23}
-}
-
-func (x *ReportAuditSummary) GetAccepted() int64 {
-	if x != nil {
-		return x.Accepted
-	}
-	return 0
-}
-
 type QueryAuditRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ApiKeyId      string                 `protobuf:"bytes,1,opt,name=api_key_id,json=apiKeyId,proto3" json:"api_key_id,omitempty"`           // exact key id
-	Method        string                 `protobuf:"bytes,2,opt,name=method,proto3" json:"method,omitempty"`                                 // exact method
-	PathPrefix    string                 `protobuf:"bytes,3,opt,name=path_prefix,json=pathPrefix,proto3" json:"path_prefix,omitempty"`       // path prefix match
-	ActionPrefix  string                 `protobuf:"bytes,4,opt,name=action_prefix,json=actionPrefix,proto3" json:"action_prefix,omitempty"` // action-namespace prefix match (e.g. "photos:")
-	Status        int32                  `protobuf:"varint,5,opt,name=status,proto3" json:"status,omitempty"`                                // exact response status
-	After         *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=after,proto3" json:"after,omitempty"`                                   // entries at or after
-	Before        *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=before,proto3" json:"before,omitempty"`                                 // entries at or before
-	Limit         int32                  `protobuf:"varint,8,opt,name=limit,proto3" json:"limit,omitempty"`                                  // page size
-	Cursor        int64                  `protobuf:"varint,9,opt,name=cursor,proto3" json:"cursor,omitempty"`                                // keyset cursor: return entries with id < cursor
+	ApiKeyId      string                 `protobuf:"bytes,1,opt,name=api_key_id,json=apiKeyId,proto3" json:"api_key_id,omitempty"`                 // exact key id
+	ActionPrefix  string                 `protobuf:"bytes,2,opt,name=action_prefix,json=actionPrefix,proto3" json:"action_prefix,omitempty"`       // action-namespace prefix match (e.g. "photos:" or "turnstile:")
+	Decision      *Decision              `protobuf:"varint,3,opt,name=decision,proto3,enum=turnstile.v1.Decision,oneof" json:"decision,omitempty"` // filter by outcome; absent = any
+	After         *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=after,proto3" json:"after,omitempty"`                                         // entries at or after
+	Before        *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=before,proto3" json:"before,omitempty"`                                       // entries at or before
+	Limit         int32                  `protobuf:"varint,6,opt,name=limit,proto3" json:"limit,omitempty"`                                        // page size
+	Cursor        int64                  `protobuf:"varint,7,opt,name=cursor,proto3" json:"cursor,omitempty"`                                      // keyset cursor: return entries with id < cursor
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *QueryAuditRequest) Reset() {
 	*x = QueryAuditRequest{}
-	mi := &file_turnstile_v1_turnstile_proto_msgTypes[24]
+	mi := &file_turnstile_v1_turnstile_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1665,7 +1537,7 @@ func (x *QueryAuditRequest) String() string {
 func (*QueryAuditRequest) ProtoMessage() {}
 
 func (x *QueryAuditRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_turnstile_v1_turnstile_proto_msgTypes[24]
+	mi := &file_turnstile_v1_turnstile_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1678,26 +1550,12 @@ func (x *QueryAuditRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QueryAuditRequest.ProtoReflect.Descriptor instead.
 func (*QueryAuditRequest) Descriptor() ([]byte, []int) {
-	return file_turnstile_v1_turnstile_proto_rawDescGZIP(), []int{24}
+	return file_turnstile_v1_turnstile_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *QueryAuditRequest) GetApiKeyId() string {
 	if x != nil {
 		return x.ApiKeyId
-	}
-	return ""
-}
-
-func (x *QueryAuditRequest) GetMethod() string {
-	if x != nil {
-		return x.Method
-	}
-	return ""
-}
-
-func (x *QueryAuditRequest) GetPathPrefix() string {
-	if x != nil {
-		return x.PathPrefix
 	}
 	return ""
 }
@@ -1709,11 +1567,11 @@ func (x *QueryAuditRequest) GetActionPrefix() string {
 	return ""
 }
 
-func (x *QueryAuditRequest) GetStatus() int32 {
-	if x != nil {
-		return x.Status
+func (x *QueryAuditRequest) GetDecision() Decision {
+	if x != nil && x.Decision != nil {
+		return *x.Decision
 	}
-	return 0
+	return Decision_ALLOWED
 }
 
 func (x *QueryAuditRequest) GetAfter() *timestamppb.Timestamp {
@@ -1754,7 +1612,7 @@ type QueryAuditResponse struct {
 
 func (x *QueryAuditResponse) Reset() {
 	*x = QueryAuditResponse{}
-	mi := &file_turnstile_v1_turnstile_proto_msgTypes[25]
+	mi := &file_turnstile_v1_turnstile_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1766,7 +1624,7 @@ func (x *QueryAuditResponse) String() string {
 func (*QueryAuditResponse) ProtoMessage() {}
 
 func (x *QueryAuditResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_turnstile_v1_turnstile_proto_msgTypes[25]
+	mi := &file_turnstile_v1_turnstile_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1779,7 +1637,7 @@ func (x *QueryAuditResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QueryAuditResponse.ProtoReflect.Descriptor instead.
 func (*QueryAuditResponse) Descriptor() ([]byte, []int) {
-	return file_turnstile_v1_turnstile_proto_rawDescGZIP(), []int{25}
+	return file_turnstile_v1_turnstile_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *QueryAuditResponse) GetEntries() []*AuditEntry {
@@ -1908,11 +1766,11 @@ const file_turnstile_v1_turnstile_proto_rawDesc = "" +
 	"statements\x129\n" +
 	"\vrate_limits\x18\x02 \x01(\v2\x18.turnstile.v1.RateLimitsR\n" +
 	"rateLimits\x12)\n" +
-	"\x10expected_version\x18\x03 \x01(\x03R\x0fexpectedVersion\"\x91\x01\n" +
+	"\x10expected_version\x18\x03 \x01(\x03R\x0fexpectedVersion\"\x8f\x01\n" +
 	"\fCheckRequest\x12!\n" +
 	"\fclient_token\x18\x01 \x01(\tR\vclientToken\x12\x16\n" +
-	"\x06action\x18\x02 \x01(\tR\x06action\x12\x1c\n" +
-	"\tresources\x18\x03 \x03(\tR\tresources\x12(\n" +
+	"\x06action\x18\x02 \x01(\tR\x06action\x12\x1a\n" +
+	"\bresource\x18\x03 \x01(\tR\bresource\x12(\n" +
 	"\x10count_rate_limit\x18\x04 \x01(\bR\x0ecountRateLimit\"\xd3\x01\n" +
 	"\rCheckResponse\x12\x18\n" +
 	"\aallowed\x18\x01 \x01(\bR\aallowed\x125\n" +
@@ -1928,39 +1786,25 @@ const file_turnstile_v1_turnstile_proto_rawDesc = "" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x12\n" +
 	"\x04note\x18\x03 \x01(\tR\x04note\"8\n" +
 	"\x13AuthenticateRequest\x12!\n" +
-	"\fclient_token\x18\x01 \x01(\tR\vclientToken\"\xd7\x02\n" +
+	"\fclient_token\x18\x01 \x01(\tR\vclientToken\"\xcc\x01\n" +
 	"\n" +
 	"AuditEntry\x12\x1c\n" +
 	"\n" +
-	"api_key_id\x18\x01 \x01(\tR\bapiKeyId\x12 \n" +
-	"\fapi_key_name\x18\x02 \x01(\tR\n" +
-	"apiKeyName\x12\x16\n" +
-	"\x06method\x18\x03 \x01(\tR\x06method\x12\x12\n" +
-	"\x04path\x18\x04 \x01(\tR\x04path\x12\x16\n" +
-	"\x06action\x18\x05 \x01(\tR\x06action\x12\x1a\n" +
-	"\bresource\x18\x06 \x01(\tR\bresource\x12'\n" +
-	"\x0frequest_summary\x18\a \x01(\tR\x0erequestSummary\x12'\n" +
-	"\x0fresponse_status\x18\b \x01(\x05R\x0eresponseStatus\x12\x1d\n" +
-	"\n" +
-	"latency_ms\x18\t \x01(\x03R\tlatencyMs\x128\n" +
-	"\ttimestamp\x18\n" +
-	" \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\"H\n" +
-	"\x12ReportAuditRequest\x122\n" +
-	"\aentries\x18\x01 \x03(\v2\x18.turnstile.v1.AuditEntryR\aentries\"0\n" +
-	"\x12ReportAuditSummary\x12\x1a\n" +
-	"\baccepted\x18\x01 \x01(\x03R\baccepted\"\xbb\x02\n" +
+	"api_key_id\x18\x01 \x01(\tR\bapiKeyId\x12\x16\n" +
+	"\x06action\x18\x02 \x01(\tR\x06action\x12\x1a\n" +
+	"\bresource\x18\x03 \x01(\tR\bresource\x122\n" +
+	"\bdecision\x18\x04 \x01(\x0e2\x16.turnstile.v1.DecisionR\bdecision\x128\n" +
+	"\ttimestamp\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\"\xb0\x02\n" +
 	"\x11QueryAuditRequest\x12\x1c\n" +
 	"\n" +
-	"api_key_id\x18\x01 \x01(\tR\bapiKeyId\x12\x16\n" +
-	"\x06method\x18\x02 \x01(\tR\x06method\x12\x1f\n" +
-	"\vpath_prefix\x18\x03 \x01(\tR\n" +
-	"pathPrefix\x12#\n" +
-	"\raction_prefix\x18\x04 \x01(\tR\factionPrefix\x12\x16\n" +
-	"\x06status\x18\x05 \x01(\x05R\x06status\x120\n" +
-	"\x05after\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\x05after\x122\n" +
-	"\x06before\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\x06before\x12\x14\n" +
-	"\x05limit\x18\b \x01(\x05R\x05limit\x12\x16\n" +
-	"\x06cursor\x18\t \x01(\x03R\x06cursor\"i\n" +
+	"api_key_id\x18\x01 \x01(\tR\bapiKeyId\x12#\n" +
+	"\raction_prefix\x18\x02 \x01(\tR\factionPrefix\x127\n" +
+	"\bdecision\x18\x03 \x01(\x0e2\x16.turnstile.v1.DecisionH\x00R\bdecision\x88\x01\x01\x120\n" +
+	"\x05after\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\x05after\x122\n" +
+	"\x06before\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\x06before\x12\x14\n" +
+	"\x05limit\x18\x06 \x01(\x05R\x05limit\x12\x16\n" +
+	"\x06cursor\x18\a \x01(\x03R\x06cursorB\v\n" +
+	"\t_decision\"i\n" +
 	"\x12QueryAuditResponse\x122\n" +
 	"\aentries\x18\x01 \x03(\v2\x18.turnstile.v1.AuditEntryR\aentries\x12\x1f\n" +
 	"\vnext_cursor\x18\x02 \x01(\x03R\n" +
@@ -1973,11 +1817,10 @@ const file_turnstile_v1_turnstile_proto_rawDesc = "" +
 	"\aALLOWED\x10\x00\x12\x13\n" +
 	"\x0fUNAUTHENTICATED\x10\x01\x12\x11\n" +
 	"\rPOLICY_DENIED\x10\x02\x12\x10\n" +
-	"\fRATE_LIMITED\x10\x032\xd3\x06\n" +
+	"\fRATE_LIMITED\x10\x032\x80\x06\n" +
 	"\tTurnstile\x12@\n" +
 	"\x05Check\x12\x1a.turnstile.v1.CheckRequest\x1a\x1b.turnstile.v1.CheckResponse\x12J\n" +
-	"\fAuthenticate\x12!.turnstile.v1.AuthenticateRequest\x1a\x17.turnstile.v1.Principal\x12Q\n" +
-	"\vReportAudit\x12 .turnstile.v1.ReportAuditRequest\x1a .turnstile.v1.ReportAuditSummary\x12>\n" +
+	"\fAuthenticate\x12!.turnstile.v1.AuthenticateRequest\x1a\x17.turnstile.v1.Principal\x12>\n" +
 	"\tCreateKey\x12\x1e.turnstile.v1.CreateKeyRequest\x1a\x11.turnstile.v1.Key\x12I\n" +
 	"\bListKeys\x12\x1d.turnstile.v1.ListKeysRequest\x1a\x1e.turnstile.v1.ListKeysResponse\x128\n" +
 	"\x06GetKey\x12\x1b.turnstile.v1.GetKeyRequest\x1a\x11.turnstile.v1.Key\x12>\n" +
@@ -2002,7 +1845,7 @@ func file_turnstile_v1_turnstile_proto_rawDescGZIP() []byte {
 }
 
 var file_turnstile_v1_turnstile_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_turnstile_v1_turnstile_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
+var file_turnstile_v1_turnstile_proto_msgTypes = make([]protoimpl.MessageInfo, 28)
 var file_turnstile_v1_turnstile_proto_goTypes = []any{
 	(Effect)(0),                   // 0: turnstile.v1.Effect
 	(Decision)(0),                 // 1: turnstile.v1.Decision
@@ -2028,56 +1871,54 @@ var file_turnstile_v1_turnstile_proto_goTypes = []any{
 	(*Principal)(nil),             // 21: turnstile.v1.Principal
 	(*AuthenticateRequest)(nil),   // 22: turnstile.v1.AuthenticateRequest
 	(*AuditEntry)(nil),            // 23: turnstile.v1.AuditEntry
-	(*ReportAuditRequest)(nil),    // 24: turnstile.v1.ReportAuditRequest
-	(*ReportAuditSummary)(nil),    // 25: turnstile.v1.ReportAuditSummary
-	(*QueryAuditRequest)(nil),     // 26: turnstile.v1.QueryAuditRequest
-	(*QueryAuditResponse)(nil),    // 27: turnstile.v1.QueryAuditResponse
-	nil,                           // 28: turnstile.v1.RateLimitConfig.PerActionEntry
-	nil,                           // 29: turnstile.v1.Key.RateLimitsEntry
-	nil,                           // 30: turnstile.v1.CreateKeyRequest.RateLimitsEntry
-	nil,                           // 31: turnstile.v1.UpdateKeyRequest.RateLimitsEntry
-	(*timestamppb.Timestamp)(nil), // 32: google.protobuf.Timestamp
-	(*emptypb.Empty)(nil),         // 33: google.protobuf.Empty
+	(*QueryAuditRequest)(nil),     // 24: turnstile.v1.QueryAuditRequest
+	(*QueryAuditResponse)(nil),    // 25: turnstile.v1.QueryAuditResponse
+	nil,                           // 26: turnstile.v1.RateLimitConfig.PerActionEntry
+	nil,                           // 27: turnstile.v1.Key.RateLimitsEntry
+	nil,                           // 28: turnstile.v1.CreateKeyRequest.RateLimitsEntry
+	nil,                           // 29: turnstile.v1.UpdateKeyRequest.RateLimitsEntry
+	(*timestamppb.Timestamp)(nil), // 30: google.protobuf.Timestamp
+	(*emptypb.Empty)(nil),         // 31: google.protobuf.Empty
 }
 var file_turnstile_v1_turnstile_proto_depIdxs = []int32{
 	0,  // 0: turnstile.v1.Statement.effect:type_name -> turnstile.v1.Effect
 	2,  // 1: turnstile.v1.StatementList.statements:type_name -> turnstile.v1.Statement
 	4,  // 2: turnstile.v1.RateLimitConfig.default:type_name -> turnstile.v1.Limit
-	28, // 3: turnstile.v1.RateLimitConfig.per_action:type_name -> turnstile.v1.RateLimitConfig.PerActionEntry
+	26, // 3: turnstile.v1.RateLimitConfig.per_action:type_name -> turnstile.v1.RateLimitConfig.PerActionEntry
 	5,  // 4: turnstile.v1.RateLimits.per_key:type_name -> turnstile.v1.RateLimitConfig
 	5,  // 5: turnstile.v1.RateLimits.service_wide:type_name -> turnstile.v1.RateLimitConfig
 	2,  // 6: turnstile.v1.Key.statements:type_name -> turnstile.v1.Statement
-	29, // 7: turnstile.v1.Key.rate_limits:type_name -> turnstile.v1.Key.RateLimitsEntry
-	32, // 8: turnstile.v1.Key.created_at:type_name -> google.protobuf.Timestamp
-	32, // 9: turnstile.v1.Key.last_used_at:type_name -> google.protobuf.Timestamp
-	32, // 10: turnstile.v1.Key.expires_at:type_name -> google.protobuf.Timestamp
+	27, // 7: turnstile.v1.Key.rate_limits:type_name -> turnstile.v1.Key.RateLimitsEntry
+	30, // 8: turnstile.v1.Key.created_at:type_name -> google.protobuf.Timestamp
+	30, // 9: turnstile.v1.Key.last_used_at:type_name -> google.protobuf.Timestamp
+	30, // 10: turnstile.v1.Key.expires_at:type_name -> google.protobuf.Timestamp
 	2,  // 11: turnstile.v1.CreateKeyRequest.statements:type_name -> turnstile.v1.Statement
-	30, // 12: turnstile.v1.CreateKeyRequest.rate_limits:type_name -> turnstile.v1.CreateKeyRequest.RateLimitsEntry
-	32, // 13: turnstile.v1.CreateKeyRequest.expires_at:type_name -> google.protobuf.Timestamp
+	28, // 12: turnstile.v1.CreateKeyRequest.rate_limits:type_name -> turnstile.v1.CreateKeyRequest.RateLimitsEntry
+	30, // 13: turnstile.v1.CreateKeyRequest.expires_at:type_name -> google.protobuf.Timestamp
 	7,  // 14: turnstile.v1.ListKeysResponse.keys:type_name -> turnstile.v1.Key
 	3,  // 15: turnstile.v1.UpdateKeyRequest.statements:type_name -> turnstile.v1.StatementList
-	31, // 16: turnstile.v1.UpdateKeyRequest.rate_limits:type_name -> turnstile.v1.UpdateKeyRequest.RateLimitsEntry
-	32, // 17: turnstile.v1.UpdateKeyRequest.expires_at:type_name -> google.protobuf.Timestamp
+	29, // 16: turnstile.v1.UpdateKeyRequest.rate_limits:type_name -> turnstile.v1.UpdateKeyRequest.RateLimitsEntry
+	30, // 17: turnstile.v1.UpdateKeyRequest.expires_at:type_name -> google.protobuf.Timestamp
 	2,  // 18: turnstile.v1.Policy.statements:type_name -> turnstile.v1.Statement
 	6,  // 19: turnstile.v1.Policy.rate_limits:type_name -> turnstile.v1.RateLimits
-	32, // 20: turnstile.v1.Policy.updated_at:type_name -> google.protobuf.Timestamp
+	30, // 20: turnstile.v1.Policy.updated_at:type_name -> google.protobuf.Timestamp
 	2,  // 21: turnstile.v1.UpdatePolicyRequest.statements:type_name -> turnstile.v1.Statement
 	6,  // 22: turnstile.v1.UpdatePolicyRequest.rate_limits:type_name -> turnstile.v1.RateLimits
 	21, // 23: turnstile.v1.CheckResponse.principal:type_name -> turnstile.v1.Principal
 	1,  // 24: turnstile.v1.CheckResponse.decision:type_name -> turnstile.v1.Decision
 	20, // 25: turnstile.v1.CheckResponse.rate_limit:type_name -> turnstile.v1.RateLimitVerdict
-	32, // 26: turnstile.v1.AuditEntry.timestamp:type_name -> google.protobuf.Timestamp
-	23, // 27: turnstile.v1.ReportAuditRequest.entries:type_name -> turnstile.v1.AuditEntry
-	32, // 28: turnstile.v1.QueryAuditRequest.after:type_name -> google.protobuf.Timestamp
-	32, // 29: turnstile.v1.QueryAuditRequest.before:type_name -> google.protobuf.Timestamp
-	23, // 30: turnstile.v1.QueryAuditResponse.entries:type_name -> turnstile.v1.AuditEntry
-	4,  // 31: turnstile.v1.RateLimitConfig.PerActionEntry.value:type_name -> turnstile.v1.Limit
-	4,  // 32: turnstile.v1.Key.RateLimitsEntry.value:type_name -> turnstile.v1.Limit
-	4,  // 33: turnstile.v1.CreateKeyRequest.RateLimitsEntry.value:type_name -> turnstile.v1.Limit
-	4,  // 34: turnstile.v1.UpdateKeyRequest.RateLimitsEntry.value:type_name -> turnstile.v1.Limit
-	18, // 35: turnstile.v1.Turnstile.Check:input_type -> turnstile.v1.CheckRequest
-	22, // 36: turnstile.v1.Turnstile.Authenticate:input_type -> turnstile.v1.AuthenticateRequest
-	24, // 37: turnstile.v1.Turnstile.ReportAudit:input_type -> turnstile.v1.ReportAuditRequest
+	1,  // 26: turnstile.v1.AuditEntry.decision:type_name -> turnstile.v1.Decision
+	30, // 27: turnstile.v1.AuditEntry.timestamp:type_name -> google.protobuf.Timestamp
+	1,  // 28: turnstile.v1.QueryAuditRequest.decision:type_name -> turnstile.v1.Decision
+	30, // 29: turnstile.v1.QueryAuditRequest.after:type_name -> google.protobuf.Timestamp
+	30, // 30: turnstile.v1.QueryAuditRequest.before:type_name -> google.protobuf.Timestamp
+	23, // 31: turnstile.v1.QueryAuditResponse.entries:type_name -> turnstile.v1.AuditEntry
+	4,  // 32: turnstile.v1.RateLimitConfig.PerActionEntry.value:type_name -> turnstile.v1.Limit
+	4,  // 33: turnstile.v1.Key.RateLimitsEntry.value:type_name -> turnstile.v1.Limit
+	4,  // 34: turnstile.v1.CreateKeyRequest.RateLimitsEntry.value:type_name -> turnstile.v1.Limit
+	4,  // 35: turnstile.v1.UpdateKeyRequest.RateLimitsEntry.value:type_name -> turnstile.v1.Limit
+	18, // 36: turnstile.v1.Turnstile.Check:input_type -> turnstile.v1.CheckRequest
+	22, // 37: turnstile.v1.Turnstile.Authenticate:input_type -> turnstile.v1.AuthenticateRequest
 	8,  // 38: turnstile.v1.Turnstile.CreateKey:input_type -> turnstile.v1.CreateKeyRequest
 	9,  // 39: turnstile.v1.Turnstile.ListKeys:input_type -> turnstile.v1.ListKeysRequest
 	11, // 40: turnstile.v1.Turnstile.GetKey:input_type -> turnstile.v1.GetKeyRequest
@@ -2086,24 +1927,23 @@ var file_turnstile_v1_turnstile_proto_depIdxs = []int32{
 	14, // 43: turnstile.v1.Turnstile.DeleteKey:input_type -> turnstile.v1.DeleteKeyRequest
 	16, // 44: turnstile.v1.Turnstile.GetPolicy:input_type -> turnstile.v1.GetPolicyRequest
 	17, // 45: turnstile.v1.Turnstile.UpdatePolicy:input_type -> turnstile.v1.UpdatePolicyRequest
-	26, // 46: turnstile.v1.Turnstile.QueryAudit:input_type -> turnstile.v1.QueryAuditRequest
+	24, // 46: turnstile.v1.Turnstile.QueryAudit:input_type -> turnstile.v1.QueryAuditRequest
 	19, // 47: turnstile.v1.Turnstile.Check:output_type -> turnstile.v1.CheckResponse
 	21, // 48: turnstile.v1.Turnstile.Authenticate:output_type -> turnstile.v1.Principal
-	25, // 49: turnstile.v1.Turnstile.ReportAudit:output_type -> turnstile.v1.ReportAuditSummary
-	7,  // 50: turnstile.v1.Turnstile.CreateKey:output_type -> turnstile.v1.Key
-	10, // 51: turnstile.v1.Turnstile.ListKeys:output_type -> turnstile.v1.ListKeysResponse
-	7,  // 52: turnstile.v1.Turnstile.GetKey:output_type -> turnstile.v1.Key
-	7,  // 53: turnstile.v1.Turnstile.UpdateKey:output_type -> turnstile.v1.Key
-	7,  // 54: turnstile.v1.Turnstile.RotateKey:output_type -> turnstile.v1.Key
-	33, // 55: turnstile.v1.Turnstile.DeleteKey:output_type -> google.protobuf.Empty
-	15, // 56: turnstile.v1.Turnstile.GetPolicy:output_type -> turnstile.v1.Policy
-	15, // 57: turnstile.v1.Turnstile.UpdatePolicy:output_type -> turnstile.v1.Policy
-	27, // 58: turnstile.v1.Turnstile.QueryAudit:output_type -> turnstile.v1.QueryAuditResponse
-	47, // [47:59] is the sub-list for method output_type
-	35, // [35:47] is the sub-list for method input_type
-	35, // [35:35] is the sub-list for extension type_name
-	35, // [35:35] is the sub-list for extension extendee
-	0,  // [0:35] is the sub-list for field type_name
+	7,  // 49: turnstile.v1.Turnstile.CreateKey:output_type -> turnstile.v1.Key
+	10, // 50: turnstile.v1.Turnstile.ListKeys:output_type -> turnstile.v1.ListKeysResponse
+	7,  // 51: turnstile.v1.Turnstile.GetKey:output_type -> turnstile.v1.Key
+	7,  // 52: turnstile.v1.Turnstile.UpdateKey:output_type -> turnstile.v1.Key
+	7,  // 53: turnstile.v1.Turnstile.RotateKey:output_type -> turnstile.v1.Key
+	31, // 54: turnstile.v1.Turnstile.DeleteKey:output_type -> google.protobuf.Empty
+	15, // 55: turnstile.v1.Turnstile.GetPolicy:output_type -> turnstile.v1.Policy
+	15, // 56: turnstile.v1.Turnstile.UpdatePolicy:output_type -> turnstile.v1.Policy
+	25, // 57: turnstile.v1.Turnstile.QueryAudit:output_type -> turnstile.v1.QueryAuditResponse
+	47, // [47:58] is the sub-list for method output_type
+	36, // [36:47] is the sub-list for method input_type
+	36, // [36:36] is the sub-list for extension type_name
+	36, // [36:36] is the sub-list for extension extendee
+	0,  // [0:36] is the sub-list for field type_name
 }
 
 func init() { file_turnstile_v1_turnstile_proto_init() }
@@ -2112,13 +1952,14 @@ func file_turnstile_v1_turnstile_proto_init() {
 		return
 	}
 	file_turnstile_v1_turnstile_proto_msgTypes[10].OneofWrappers = []any{}
+	file_turnstile_v1_turnstile_proto_msgTypes[22].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_turnstile_v1_turnstile_proto_rawDesc), len(file_turnstile_v1_turnstile_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   30,
+			NumMessages:   28,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

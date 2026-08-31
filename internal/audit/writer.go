@@ -11,14 +11,16 @@ import (
 	"context"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"harrisonhjones.com/turnstile/internal/store"
 )
 
 // queueSize bounds the in-memory backlog of pending audit writes. Once full,
-// Write blocks (backpressure to the ReportAudit caller) rather than spawning
-// unbounded goroutines or growing memory without limit.
+// Write drops the entry rather than blocking — Check records audit on the hot
+// path, so a full queue must never stall a request. Dropped entries are counted
+// and logged; audit completeness yields to hot-path latency under overload.
 const queueSize = 1024
 
 // Writer persists audit entries from a single background goroutine.
@@ -28,6 +30,7 @@ type Writer struct {
 	stopping chan struct{} // closed by Wait to signal shutdown
 	done     chan struct{} // closed by the consumer when it has drained and exited
 	stopOnce sync.Once
+	dropped  atomic.Int64 // entries dropped because the queue was full
 }
 
 // NewWriter creates a Writer and starts its background consumer.
@@ -43,16 +46,14 @@ func NewWriter(s *store.Store) *Writer {
 }
 
 // Write enqueues an entry for the background consumer and reports whether it was
-// accepted. It applies backpressure when the queue is full (blocking the
-// caller), but never blocks past shutdown: once Wait has signaled stopping, the
-// entry is dropped (with a log line) and Write returns false rather than
-// deadlocking or enqueuing into a channel whose consumer has exited.
+// accepted. It NEVER blocks: if the queue is full it drops the entry and returns
+// false (audit completeness yields to hot-path latency, since Check records audit
+// inline). It also drops once shutdown has begun — after Wait signals stopping,
+// enqueuing into a channel whose consumer is draining/exited would be unsafe.
 //
 // The stopping check is prioritized (a non-blocking pre-check) so that once
 // shutdown has begun, Write deterministically drops rather than racing the
-// consumer's drain. In the server, the ShutdownGate quiesces all handlers before
-// Wait is called, so no Write races shutdown in practice; this just makes the
-// primitive safe on its own.
+// consumer's drain.
 func (w *Writer) Write(e *store.AuditEntry) bool {
 	select {
 	case <-w.stopping:
@@ -65,6 +66,13 @@ func (w *Writer) Write(e *store.AuditEntry) bool {
 		return true
 	case <-w.stopping:
 		slog.Warn("audit writer stopping; dropping entry", "api_key_id", e.APIKeyID)
+		return false
+	default:
+		// Queue full — drop rather than block the caller (e.g. the Check hot path).
+		n := w.dropped.Add(1)
+		if n == 1 || n%1000 == 0 {
+			slog.Warn("audit queue full; dropping entries", "dropped_total", n)
+		}
 		return false
 	}
 }

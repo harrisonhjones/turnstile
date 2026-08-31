@@ -11,6 +11,8 @@ import {
   IonNote,
   IonPage,
   IonRow,
+  IonSelect,
+  IonSelectOption,
   IonSpinner,
   IonText,
 } from "@ionic/react";
@@ -24,8 +26,7 @@ const PAGE = 50;
 interface Filters {
   apiKeyId: string;
   actionPrefix: string;
-  method: string;
-  status: string;
+  decision: string; // "" = any, else a Decision value
   after: string; // datetime-local
   before: string;
 }
@@ -33,11 +34,12 @@ interface Filters {
 const emptyFilters: Filters = {
   apiKeyId: "",
   actionPrefix: "",
-  method: "",
-  status: "",
+  decision: "",
   after: "",
   before: "",
 };
+
+const DECISIONS = ["ALLOWED", "POLICY_DENIED", "RATE_LIMITED", "UNAUTHENTICATED"] as const;
 
 function toISO(local: string): string | undefined {
   return local ? new Date(local).toISOString() : undefined;
@@ -56,12 +58,10 @@ export default function Audit() {
     async (reset: boolean) => {
       setError("");
       setLoading(true);
-      const status = Number(filters.status);
       const req: QueryAuditRequest = {
         apiKeyId: filters.apiKeyId || undefined,
         actionPrefix: filters.actionPrefix || undefined,
-        method: filters.method || undefined,
-        status: filters.status && isFinite(status) ? status : undefined,
+        decision: (filters.decision || undefined) as QueryAuditRequest["decision"],
         after: toISO(filters.after),
         before: toISO(filters.before),
         limit: PAGE,
@@ -112,23 +112,21 @@ export default function Audit() {
                 onIonInput={(e) => set({ actionPrefix: e.detail.value ?? "" })}
               />
             </IonCol>
-            <IonCol size="6" sizeMd="2">
-              <IonInput
-                label="Method"
+            <IonCol size="12" sizeMd="4">
+              <IonSelect
+                label="Decision"
                 labelPlacement="stacked"
-                placeholder="REST"
-                value={filters.method}
-                onIonInput={(e) => set({ method: e.detail.value ?? "" })}
-              />
-            </IonCol>
-            <IonCol size="6" sizeMd="2">
-              <IonInput
-                label="Status"
-                labelPlacement="stacked"
-                type="number"
-                value={filters.status}
-                onIonInput={(e) => set({ status: e.detail.value ?? "" })}
-              />
+                placeholder="Any"
+                value={filters.decision}
+                onIonChange={(e) => set({ decision: e.detail.value ?? "" })}
+              >
+                <IonSelectOption value="">Any</IonSelectOption>
+                {DECISIONS.map((d) => (
+                  <IonSelectOption key={d} value={d}>
+                    {d}
+                  </IonSelectOption>
+                ))}
+              </IonSelect>
             </IonCol>
             <IonCol size="6" sizeMd="4">
               <IonInput
@@ -177,13 +175,12 @@ export default function Audit() {
             <IonItem key={`${e.timestamp}-${i}`} lines="full">
               <IonLabel>
                 <h3 className="mono">
-                  {e.action || "—"} → {e.responseStatus} · {e.latencyMs ?? "?"}ms
+                  {e.action || "—"} → {e.decision}
                 </h3>
                 <p className="muted">
-                  {fmtTime(e.timestamp)} · {e.method} {e.path} · key {e.apiKeyName || e.apiKeyId}
+                  {fmtTime(e.timestamp)} · key {e.apiKeyId || "—"}
                 </p>
                 {e.resource && <p className="mono">resource: {e.resource}</p>}
-                {e.requestSummary && <p className="muted">{e.requestSummary}</p>}
               </IonLabel>
             </IonItem>
           ))}

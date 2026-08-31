@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -72,7 +71,7 @@ func (h *Handler) CreateKey(ctx context.Context, req *connect.Request[turnstilev
 	if err := h.store.CreateAPIKey(ctx, k); err != nil {
 		return nil, storeErr(err)
 	}
-	h.writeManageAudit(caller, "turnstile:create-key", k.ID, http.StatusOK)
+	h.writeManageAudit(caller, "turnstile:create-key", k.ID, turnstilev1.Decision_ALLOWED)
 
 	pbKey := keyToPB(k)
 	pbKey.PlaintextToken = plaintext
@@ -179,7 +178,7 @@ func (h *Handler) UpdateKey(ctx context.Context, req *connect.Request[turnstilev
 	if err != nil {
 		return nil, storeErr(err)
 	}
-	h.writeManageAudit(caller, "turnstile:update-key", r.Id, http.StatusOK)
+	h.writeManageAudit(caller, "turnstile:update-key", r.Id, turnstilev1.Decision_ALLOWED)
 	return connect.NewResponse(keyToPB(updated)), nil
 }
 
@@ -202,7 +201,7 @@ func (h *Handler) RotateKey(ctx context.Context, req *connect.Request[turnstilev
 	if err != nil {
 		return nil, storeErr(err)
 	}
-	h.writeManageAudit(caller, "turnstile:rotate-key", req.Msg.Id, http.StatusOK)
+	h.writeManageAudit(caller, "turnstile:rotate-key", req.Msg.Id, turnstilev1.Decision_ALLOWED)
 	pbKey := keyToPB(updated)
 	pbKey.PlaintextToken = plaintext
 	return connect.NewResponse(pbKey), nil
@@ -221,7 +220,7 @@ func (h *Handler) DeleteKey(ctx context.Context, req *connect.Request[turnstilev
 		return nil, storeErr(err)
 	}
 	h.rateLimiter.ForgetKey(req.Msg.Id)
-	h.writeManageAudit(caller, "turnstile:delete-key", req.Msg.Id, http.StatusOK)
+	h.writeManageAudit(caller, "turnstile:delete-key", req.Msg.Id, turnstilev1.Decision_ALLOWED)
 	return connect.NewResponse(&emptypb.Empty{}), nil
 }
 
@@ -270,7 +269,7 @@ func (h *Handler) UpdatePolicy(ctx context.Context, req *connect.Request[turnsti
 	h.policyCache.Set(gp)
 	h.rateLimiter.SetGlobal(limits)
 
-	h.writeManageAudit(callerKey, "turnstile:update-policy", "*", http.StatusOK)
+	h.writeManageAudit(callerKey, "turnstile:update-policy", "*", turnstilev1.Decision_ALLOWED)
 	return connect.NewResponse(policyToPB(gp)), nil
 }
 
@@ -289,14 +288,14 @@ func (h *Handler) QueryAudit(ctx context.Context, req *connect.Request[turnstile
 	}
 	filter := store.AuditFilter{
 		APIKeyID:     r.ApiKeyId,
-		Method:       r.Method,
-		PathPrefix:   r.PathPrefix,
 		ActionPrefix: r.ActionPrefix,
-		Status:       int(r.Status),
 		After:        timePtrFromPB(r.After),
 		Before:       timePtrFromPB(r.Before),
 		Limit:        limit,
 		Cursor:       r.Cursor,
+	}
+	if r.Decision != nil {
+		filter.Decision = r.Decision.String()
 	}
 	entries, nextCursor, err := h.store.ListAuditEntries(ctx, filter)
 	if err != nil {

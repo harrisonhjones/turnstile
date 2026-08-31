@@ -14,29 +14,23 @@ func escapeLike(s string) string {
 	return r.Replace(s)
 }
 
-// AuditEntry is one logged request.
+// AuditEntry is one recorded decision. APIKeyID is empty for an unauthenticated
+// Check; Decision is the outcome name (e.g. "ALLOWED", "POLICY_DENIED").
 type AuditEntry struct {
-	ID             int64
-	Timestamp      time.Time
-	APIKeyID       string
-	APIKeyName     string
-	Method         string
-	Path           string
-	Action         string
-	Resource       string
-	RequestSummary string
-	ResponseStatus int
-	LatencyMS      int64
+	ID        int64
+	Timestamp time.Time
+	APIKeyID  string
+	Action    string
+	Resource  string
+	Decision  string
 }
 
 // InsertAuditEntry appends an audit entry.
 func (s *Store) InsertAuditEntry(ctx context.Context, e *AuditEntry) error {
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO audit_log
-		 (timestamp, api_key_id, api_key_name, method, path, action, resource, request_summary, response_status, latency_ms)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		nanos(e.Timestamp), e.APIKeyID, e.APIKeyName, e.Method, e.Path,
-		e.Action, e.Resource, e.RequestSummary, e.ResponseStatus, e.LatencyMS,
+		`INSERT INTO audit_log (timestamp, api_key_id, action, resource, decision)
+		 VALUES (?, ?, ?, ?, ?)`,
+		nanos(e.Timestamp), e.APIKeyID, e.Action, e.Resource, e.Decision,
 	)
 	if err != nil {
 		return fmt.Errorf("insert audit entry: %w", err)
@@ -63,10 +57,8 @@ func (s *Store) DeleteAuditEntriesBefore(ctx context.Context, cutoff time.Time) 
 // AuditFilter narrows an audit query. Zero-value fields are ignored.
 type AuditFilter struct {
 	APIKeyID     string     // restrict to one key
-	Method       string     // exact method
-	PathPrefix   string     // path prefix
-	ActionPrefix string     // action-namespace prefix (e.g. "beeper:")
-	Status       int        // exact response status
+	ActionPrefix string     // action-namespace prefix (e.g. "photos:" or "turnstile:")
+	Decision     string     // exact decision name (e.g. "ALLOWED"); empty = any
 	After        *time.Time // entries at or after
 	Before       *time.Time // entries at or before
 	Limit        int        // page size
@@ -85,23 +77,15 @@ func (s *Store) ListAuditEntries(ctx context.Context, f AuditFilter) (entries []
 		where = append(where, "api_key_id = ?")
 		args = append(args, f.APIKeyID)
 	}
-	if f.Method != "" {
-		where = append(where, "method = ?")
-		args = append(args, f.Method)
-	}
-	if f.PathPrefix != "" {
+	if f.ActionPrefix != "" {
 		// Prefix match. Escape LIKE metacharacters so a caller-supplied % or _
 		// is matched literally rather than acting as a wildcard.
-		where = append(where, `path LIKE ? ESCAPE '\'`)
-		args = append(args, escapeLike(f.PathPrefix)+"%")
-	}
-	if f.ActionPrefix != "" {
 		where = append(where, `action LIKE ? ESCAPE '\'`)
 		args = append(args, escapeLike(f.ActionPrefix)+"%")
 	}
-	if f.Status != 0 {
-		where = append(where, "response_status = ?")
-		args = append(args, f.Status)
+	if f.Decision != "" {
+		where = append(where, "decision = ?")
+		args = append(args, f.Decision)
 	}
 	if f.After != nil {
 		where = append(where, "timestamp >= ?")
@@ -116,7 +100,7 @@ func (s *Store) ListAuditEntries(ctx context.Context, f AuditFilter) (entries []
 		args = append(args, f.Cursor)
 	}
 
-	q := `SELECT id, timestamp, api_key_id, api_key_name, method, path, action, resource, request_summary, response_status, latency_ms
+	q := `SELECT id, timestamp, api_key_id, action, resource, decision
 	      FROM audit_log`
 	if len(where) > 0 {
 		q += " WHERE " + strings.Join(where, " AND ")
@@ -136,8 +120,7 @@ func (s *Store) ListAuditEntries(ctx context.Context, f AuditFilter) (entries []
 			e       AuditEntry
 			tsNanos int64
 		)
-		if err := rows.Scan(&e.ID, &tsNanos, &e.APIKeyID, &e.APIKeyName, &e.Method, &e.Path,
-			&e.Action, &e.Resource, &e.RequestSummary, &e.ResponseStatus, &e.LatencyMS); err != nil {
+		if err := rows.Scan(&e.ID, &tsNanos, &e.APIKeyID, &e.Action, &e.Resource, &e.Decision); err != nil {
 			return nil, 0, fmt.Errorf("scan audit entry: %w", err)
 		}
 		e.Timestamp = timeFromNanos(tsNanos)

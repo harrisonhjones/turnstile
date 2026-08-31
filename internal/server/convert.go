@@ -207,35 +207,12 @@ func principalToPB(k *store.APIKey) *turnstilev1.Principal {
 
 // ---- Audit ----
 
-func auditFromPB(e *turnstilev1.AuditEntry) *store.AuditEntry {
-	entry := &store.AuditEntry{
-		APIKeyID:       e.ApiKeyId,
-		APIKeyName:     e.ApiKeyName,
-		Method:         e.Method,
-		Path:           e.Path,
-		Action:         e.Action,
-		Resource:       e.Resource,
-		RequestSummary: e.RequestSummary,
-		ResponseStatus: int(e.ResponseStatus),
-		LatencyMS:      e.LatencyMs,
-	}
-	if e.Timestamp != nil {
-		entry.Timestamp = e.Timestamp.AsTime()
-	}
-	return entry
-}
-
 func auditToPB(e *store.AuditEntry) *turnstilev1.AuditEntry {
 	return &turnstilev1.AuditEntry{
-		ApiKeyId:       e.APIKeyID,
-		ApiKeyName:     e.APIKeyName,
-		Method:         e.Method,
-		Path:           e.Path,
-		Action:         e.Action,
-		Resource:       e.Resource,
-		RequestSummary: e.RequestSummary,
-		ResponseStatus: int32(e.ResponseStatus),
-		LatencyMs:      e.LatencyMS,
-		Timestamp:      timeToPB(e.Timestamp),
+		ApiKeyId:  e.APIKeyID,
+		Action:    e.Action,
+		Resource:  e.Resource,
+		Decision:  turnstilev1.Decision(turnstilev1.Decision_value[e.Decision]),
+		Timestamp: timeToPB(e.Timestamp),
 	}
 }

@@ -95,8 +95,8 @@ what CI runs, so a local `mage check` reproduces the CI gate.
 - `internal/token` — authentication (generic failure collapsing), the global
   deny ceiling, key-only management authorization, and bootstrap.
 - `internal/server` — end-to-end over an in-process Connect client: management
-  authorization (`turnstile:` actions), `Check` allow/deny/rate-limit,
-  `ReportAudit`, `QueryAudit`, and policy version conflicts.
+  authorization (`turnstile:` actions), `Check` allow/deny/rate-limit, the audit
+  row `Check` writes per decision, `QueryAudit`, and policy version conflicts.
 
 ## Resetting state
 

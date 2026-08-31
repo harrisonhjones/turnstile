@@ -4,6 +4,8 @@
 
 export type Effect = "ALLOW" | "DENY";
 
+export type Decision = "ALLOWED" | "UNAUTHENTICATED" | "POLICY_DENIED" | "RATE_LIMITED";
+
 export interface Statement {
   effect: Effect;
   actions: string[];
@@ -84,23 +86,16 @@ export interface UpdatePolicyRequest {
 
 export interface AuditEntry {
   apiKeyId?: string;
-  apiKeyName?: string;
-  method?: string;
-  path?: string;
   action?: string;
   resource?: string;
-  requestSummary?: string;
-  responseStatus?: number;
-  latencyMs?: string; // int64
+  decision?: Decision;
   timestamp?: string;
 }
 
 export interface QueryAuditRequest {
   apiKeyId?: string;
-  method?: string;
-  pathPrefix?: string;
   actionPrefix?: string;
-  status?: number;
+  decision?: Decision;
   after?: string;
   before?: string;
   limit?: number;

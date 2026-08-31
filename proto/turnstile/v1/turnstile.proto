@@ -12,19 +12,13 @@ option go_package = "harrisonhjones.com/turnstile/gen/turnstile/v1;turnstilev1";
 // an audit trail. Actions and resources are opaque, service-namespaced strings
 // (e.g. "photos:listAlbums", "photos:album:a1b2"); Turnstile never parses them.
 service Turnstile {
-  // Check does authn + authz + rate limiting in one round-trip (the hot path).
-  // It does NOT write audit: status and latency are not known until the calling
-  // host finishes the request, so hosts report audit afterward via ReportAudit.
+  // Check does authn + authz + rate limiting in one round-trip (the hot path)
+  // and records one audit entry per decision (see the audit_log).
   rpc Check(CheckRequest) returns (CheckResponse);
 
   // Authenticate resolves a client token to its Principal (identity only), for
   // a "whoami"-style lookup. No authorization or rate limiting is performed.
   rpc Authenticate(AuthenticateRequest) returns (Principal);
-
-  // ReportAudit ingests a batch of audit entries for completed requests. Unary
-  // (not client-streaming) so hosts can call it as plain JSON over HTTP: one
-  // POST with a JSON array of entries, no streaming client needed.
-  rpc ReportAudit(ReportAuditRequest) returns (ReportAuditSummary);
 
   // Management RPCs. Each requires the caller to present a key whose policy
   // allows the matching turnstile:<op> action (e.g. turnstile:create-key) on the
@@ -199,13 +193,12 @@ message UpdatePolicyRequest {
 message CheckRequest {
   string client_token = 1; // the API key presented by the end user/agent
   string action = 2; // service-namespaced, e.g. "photos:getAlbum"
-  // resources identifies the target object; e.g. ["photos:album:a1b2"]. Matched
-  // as OR (a statement matches if any resource matches). At least one resource
-  // is REQUIRED: a statement matches a resource pattern, so a Check with no
-  // resources always evaluates to a deny — even under an allow-all key. Actions
-  // that don't name a concrete object should pass a stable synthetic resource
-  // (e.g. "photos:account:acct_42" or a "svc:*"-style capability resource).
-  repeated string resources = 3;
+  // resource identifies the target object, e.g. "photos:album:a1b2". REQUIRED: a
+  // statement matches by resource pattern, so a Check with an empty resource
+  // always evaluates to a deny — even under an allow-all key. Actions that don't
+  // name a concrete object should pass a stable synthetic resource (e.g.
+  // "photos:account:acct_42" or a "svc:*"-style capability resource).
+  string resource = 3;
   bool count_rate_limit = 4; // consume budget (only when authn + authz pass)
 }
 
@@ -240,37 +233,25 @@ message AuthenticateRequest {
 
 // ---- Audit ----
 
+// AuditEntry is one recorded decision. Turnstile records these itself — `Check`
+// writes one per decision, and the management RPCs self-audit mutations and
+// denied attempts — so there is no host-reported audit intake.
 message AuditEntry {
-  string api_key_id = 1;
-  string api_key_name = 2; // denormalized; survives rename/delete
-  string method = 3; // "REST"|"MCP"|… (host-defined)
-  string path = 4;
-  string action = 5; // namespaced
-  string resource = 6;
-  string request_summary = 7; // non-sensitive; never message text
-  int32 response_status = 8;
-  int64 latency_ms = 9;
-  google.protobuf.Timestamp timestamp = 10;
-}
-
-message ReportAuditRequest {
-  repeated AuditEntry entries = 1; // at most a server-enforced cap per call
-}
-
-message ReportAuditSummary {
-  int64 accepted = 1;
+  string api_key_id = 1; // the acting key's id; empty for an unauthenticated Check
+  string action = 2; // namespaced action evaluated (host "svc:*" or "turnstile:*")
+  string resource = 3; // the target resource
+  Decision decision = 4; // the outcome (ALLOWED / POLICY_DENIED / RATE_LIMITED / UNAUTHENTICATED)
+  google.protobuf.Timestamp timestamp = 5;
 }
 
 message QueryAuditRequest {
   string api_key_id = 1; // exact key id
-  string method = 2; // exact method
-  string path_prefix = 3; // path prefix match
-  string action_prefix = 4; // action-namespace prefix match (e.g. "photos:")
-  int32 status = 5; // exact response status
-  google.protobuf.Timestamp after = 6; // entries at or after
-  google.protobuf.Timestamp before = 7; // entries at or before
-  int32 limit = 8; // page size
-  int64 cursor = 9; // keyset cursor: return entries with id < cursor
+  string action_prefix = 2; // action-namespace prefix match (e.g. "photos:" or "turnstile:")
+  optional Decision decision = 3; // filter by outcome; absent = any
+  google.protobuf.Timestamp after = 4; // entries at or after
+  google.protobuf.Timestamp before = 5; // entries at or before
+  int32 limit = 6; // page size
+  int64 cursor = 7; // keyset cursor: return entries with id < cursor
 }
 
 message QueryAuditResponse {

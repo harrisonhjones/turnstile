@@ -41,25 +41,21 @@ CREATE TABLE IF NOT EXISTS global_policy (
     updated_by  TEXT
 );
 
--- Audit log. One row per authenticated request, reported by hosts after a
--- request completes. api_key_name is denormalized so entries remain meaningful
--- after a key is renamed or deleted. request_summary holds selected
--- non-sensitive parameters (never message text). The timestamp column matters
--- most here: it is filtered on time ranges and pruned by retention, so the
--- INTEGER-nanos representation (see the note above) keeps those correct at
--- sub-second boundaries.
+-- Audit log. One row per decision, recorded by Turnstile itself: `Check` writes
+-- one per hot-path decision, and the management RPCs self-audit mutations and
+-- denied attempts. api_key_id is the acting key (empty for an unauthenticated
+-- Check); action + resource are what was evaluated; decision is the outcome
+-- (ALLOWED / POLICY_DENIED / RATE_LIMITED / UNAUTHENTICATED). The timestamp
+-- column matters most here: it is filtered on time ranges and pruned by
+-- retention, so the INTEGER-nanos representation (see the note above) keeps those
+-- correct at sub-second boundaries.
 CREATE TABLE IF NOT EXISTS audit_log (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    timestamp       INTEGER NOT NULL,
-    api_key_id      TEXT NOT NULL,
-    api_key_name    TEXT NOT NULL,
-    method          TEXT NOT NULL,
-    path            TEXT NOT NULL,
-    action          TEXT NOT NULL DEFAULT '',
-    resource        TEXT NOT NULL DEFAULT '',
-    request_summary TEXT NOT NULL DEFAULT '',
-    response_status INTEGER NOT NULL,
-    latency_ms      INTEGER NOT NULL
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp  INTEGER NOT NULL,
+    api_key_id TEXT NOT NULL DEFAULT '',
+    action     TEXT NOT NULL DEFAULT '',
+    resource   TEXT NOT NULL DEFAULT '',
+    decision   TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS idx_audit_key_id ON audit_log (api_key_id, id DESC);

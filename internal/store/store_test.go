@@ -219,9 +219,9 @@ func TestAuditInsertAndQuery(t *testing.T) {
 	base := time.Now().UTC().Truncate(time.Second)
 
 	entries := []*AuditEntry{
-		{Timestamp: base.Add(1 * time.Second), APIKeyID: "k1", APIKeyName: "n1", Method: "REST", Path: "/a", Action: "beeper:read", ResponseStatus: 200, LatencyMS: 5},
-		{Timestamp: base.Add(2 * time.Second), APIKeyID: "k1", APIKeyName: "n1", Method: "MCP", Path: "/b", Action: "beeper:send", ResponseStatus: 403, LatencyMS: 7},
-		{Timestamp: base.Add(3 * time.Second), APIKeyID: "k2", APIKeyName: "n2", Method: "REST", Path: "/c", Action: "plaid:read", ResponseStatus: 200, LatencyMS: 9},
+		{Timestamp: base.Add(1 * time.Second), APIKeyID: "k1", Action: "beeper:read", Resource: "beeper:a", Decision: "ALLOWED"},
+		{Timestamp: base.Add(2 * time.Second), APIKeyID: "k1", Action: "beeper:send", Resource: "beeper:b", Decision: "POLICY_DENIED"},
+		{Timestamp: base.Add(3 * time.Second), APIKeyID: "k2", Action: "plaid:read", Resource: "plaid:c", Decision: "ALLOWED"},
 	}
 	for _, e := range entries {
 		if err := s.InsertAuditEntry(ctx, e); err != nil {
@@ -244,10 +244,10 @@ func TestAuditInsertAndQuery(t *testing.T) {
 		t.Errorf("expected 2 beeper: entries, got %d", len(byNS))
 	}
 
-	// Filter by status.
-	byStatus, _, _ := s.ListAuditEntries(ctx, AuditFilter{Status: 403, Limit: 10})
-	if len(byStatus) != 1 {
-		t.Errorf("expected 1 entry with status 403, got %d", len(byStatus))
+	// Filter by decision.
+	byDecision, _, _ := s.ListAuditEntries(ctx, AuditFilter{Decision: "POLICY_DENIED", Limit: 10})
+	if len(byDecision) != 1 {
+		t.Errorf("expected 1 POLICY_DENIED entry, got %d", len(byDecision))
 	}
 
 	// Keyset pagination newest-first.
@@ -275,10 +275,9 @@ func TestAuditTimeRangeSubSecond(t *testing.T) {
 	half := time.Date(2026, 6, 1, 12, 0, 0, 500000000, time.UTC) // 12:00:00.500
 	later := time.Date(2026, 6, 1, 12, 0, 1, 0, time.UTC)        // 12:00:01.000
 
-	for i, ts := range []time.Time{whole, half, later} {
+	for _, ts := range []time.Time{whole, half, later} {
 		if err := s.InsertAuditEntry(ctx, &AuditEntry{
-			Timestamp: ts, APIKeyID: "k", APIKeyName: "n", Method: "REST",
-			Path: "/p", Action: "svc:read", ResponseStatus: 200, LatencyMS: int64(i),
+			Timestamp: ts, APIKeyID: "k", Action: "svc:read", Resource: "svc:x", Decision: "ALLOWED",
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -328,34 +327,34 @@ func TestAutoVacuumEnabled(t *testing.T) {
 	}
 }
 
-// TestAuditLikeEscaping verifies that LIKE metacharacters in a prefix filter are
-// matched literally rather than acting as wildcards.
+// TestAuditLikeEscaping verifies that LIKE metacharacters in the action-prefix
+// filter are matched literally rather than acting as wildcards.
 func TestAuditLikeEscaping(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 	base := time.Now().UTC()
-	paths := []string{"/a%b", "/axb", "/a_b", "/acb"}
-	for i, p := range paths {
+	actions := []string{"a%b", "axb", "a_b", "acb"}
+	for i, a := range actions {
 		if err := s.InsertAuditEntry(ctx, &AuditEntry{
-			Timestamp: base.Add(time.Duration(i) * time.Second), APIKeyID: "k", APIKeyName: "n",
-			Method: "REST", Path: p, Action: "svc:read", ResponseStatus: 200,
+			Timestamp: base.Add(time.Duration(i) * time.Second), APIKeyID: "k",
+			Action: a, Resource: "r", Decision: "ALLOWED",
 		}); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	// "/a%" as a literal prefix should match only "/a%b", NOT "/axb".
-	got, _, err := s.ListAuditEntries(ctx, AuditFilter{PathPrefix: "/a%", Limit: 10})
+	// "a%" as a literal prefix should match only "a%b", NOT "axb".
+	got, _, err := s.ListAuditEntries(ctx, AuditFilter{ActionPrefix: "a%", Limit: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 1 || got[0].Path != "/a%b" {
-		t.Errorf(`PathPrefix "/a%%" should match only "/a%%b", got %d entries`, len(got))
+	if len(got) != 1 || got[0].Action != "a%b" {
+		t.Errorf(`ActionPrefix "a%%" should match only "a%%b", got %d entries`, len(got))
 	}
 
-	// "/a_" should match only "/a_b", NOT "/acb".
-	got2, _, _ := s.ListAuditEntries(ctx, AuditFilter{PathPrefix: "/a_", Limit: 10})
-	if len(got2) != 1 || got2[0].Path != "/a_b" {
-		t.Errorf(`PathPrefix "/a_" should match only "/a_b", got %d entries`, len(got2))
+	// "a_" should match only "a_b", NOT "acb".
+	got2, _, _ := s.ListAuditEntries(ctx, AuditFilter{ActionPrefix: "a_", Limit: 10})
+	if len(got2) != 1 || got2[0].Action != "a_b" {
+		t.Errorf(`ActionPrefix "a_" should match only "a_b", got %d entries`, len(got2))
 	}
 }
