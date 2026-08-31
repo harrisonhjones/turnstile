@@ -1,16 +1,18 @@
 // Package token handles authentication and authorization for Turnstile.
 //
-// Two kinds of secret flow through here, and both are opaque, high-entropy
-// strings whose SHA-256 hash is all that is stored (looked up by hash, so there
-// is no plaintext to leak and no constant-time-comparison concern):
+// There is one kind of secret: an API key ("tsk_…"), an opaque, high-entropy
+// string whose SHA-256 hash is all that is stored (looked up by hash, so there
+// is no plaintext to leak and no constant-time-comparison concern). Authenticate
+// validates one and yields a Principal.
 //
-//   - API keys ("tsk_…"): client tokens presented by end users/agents on the
-//     Check hot path. Authenticate validates one and yields a Principal.
-//   - Admin credentials ("tsa_…"): guard the management RPCs. AuthenticateAdmin
-//     validates one against the admin_credentials table.
+// There is no separate "admin credential": the management API is guarded by the
+// same keys and policy engine as everything else. A key manages Turnstile when
+// its policy allows the relevant "turnstile:<op>" action (see the server's
+// requireManage), evaluated against the caller's own statements.
 //
 // The Authorizer evaluates a caller's key statements merged beneath the global
-// deny-only policy (see the policy package), against an action and one or more
+// deny-only policy (see the policy package) for the hot path, or the key's own
+// statements alone for management actions, against an action and one or more
 // resource representations of the target object.
 package token
 
@@ -23,27 +25,25 @@ import (
 	"strings"
 )
 
-// Token prefixes identify Turnstile-issued secrets by kind.
-const (
-	// APIKeyPrefix marks a client API key.
-	APIKeyPrefix = "tsk_"
-	// AdminPrefix marks an admin (management) credential.
-	AdminPrefix = "tsa_"
-)
+// APIKeyPrefix marks a client/management API key secret ("tsk_…").
+const APIKeyPrefix = "tsk_"
 
-// NewID returns a prefixed random identifier, e.g. "key_1a2b3c...". Used for API
-// key and admin-credential IDs.
+// NewID returns a typed, namespaced random identifier of the form
+// "turnstile:<typ>:<random-hex>", e.g. NewID("key") -> "turnstile:key:1a2b3c…".
+// The id doubles as the authorization resource for per-object management actions
+// (a key's id is the resource of turnstile:*-key actions targeting it), and sets
+// the pattern for future object types (turnstile:user:<random>).
 //
 // It panics if the system CSPRNG fails: crypto/rand.Read essentially never
 // errors on a healthy host, and continuing with a predictable (all-zero) ID
 // would be worse than crashing — a silently non-random ID could collide or be
 // guessable.
-func NewID(prefix string) string {
+func NewID(typ string) string {
 	buf := make([]byte, 12)
 	if _, err := rand.Read(buf); err != nil {
 		panic(fmt.Sprintf("token: crypto/rand failed generating ID: %v", err))
 	}
-	return prefix + "_" + hex.EncodeToString(buf)
+	return "turnstile:" + typ + ":" + hex.EncodeToString(buf)
 }
 
 // Generate creates a new random secret with the given prefix and returns the

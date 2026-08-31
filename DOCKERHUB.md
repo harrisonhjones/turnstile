@@ -19,9 +19,9 @@ Images are multi-arch (`linux/amd64`, `linux/arm64`).
 docker run -p 8080:8080 -v turnstile-data:/data harrisonhjones/turnstile:latest
 ```
 
-On first start against an empty database the container logs a **bootstrap admin
-token once** — capture it from `docker logs`; it guards the management API and
-the console at `http://localhost:8080/ui/`.
+On first start against an empty database the container logs a **bootstrap
+management key once** — capture it from `docker logs`; it guards the management
+API and the console at `http://localhost:8080/ui/`.
 
 Notes:
 
@@ -38,6 +38,6 @@ All via environment variables (all optional, sane defaults). Common ones:
 - `LISTEN_ADDR` (default `:8080`)
 - `DB_PATH` (default `/data/turnstile.db` in the image — mount a volume at `/data`)
 - `AUDIT_RETENTION_DAYS` (default `365`)
-- `SERVICE_CREDENTIAL`, `TLS_CERT_FILE`, `TLS_KEY_FILE`, `TLS_CLIENT_CA_FILE`
+- `TLS_CERT_FILE`, `TLS_KEY_FILE`, `TLS_CLIENT_CA_FILE`
 
 See the repository's `DEVELOPMENT.md` for the full reference.

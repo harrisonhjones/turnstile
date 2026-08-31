@@ -4,7 +4,7 @@ import "testing"
 
 func TestLoadDefaults(t *testing.T) {
 	// Ensure no ambient overrides leak in.
-	for _, k := range []string{"LISTEN_ADDR", "DB_PATH", "AUDIT_RETENTION_DAYS", "SERVICE_CREDENTIAL", "TLS_CERT_FILE", "TLS_KEY_FILE", "TLS_CLIENT_CA_FILE"} {
+	for _, k := range []string{"LISTEN_ADDR", "DB_PATH", "AUDIT_RETENTION_DAYS", "TLS_CERT_FILE", "TLS_KEY_FILE", "TLS_CLIENT_CA_FILE"} {
 		t.Setenv(k, "")
 	}
 	cfg, err := Load()

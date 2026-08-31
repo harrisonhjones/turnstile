@@ -41,7 +41,7 @@ whole project, just the Go backend, or just the web UI:
 
 **Backend only:**
 ```sh
-mage run:backend         # serves on :8080, prints the bootstrap admin token on first run
+mage run:backend         # serves on :8080, prints the bootstrap key token on first run
 ```
 
 **Backend + live UI:**
@@ -67,13 +67,14 @@ sane default.
 | `DB_PATH` | `turnstile.db` | SQLite database file path. |
 | `AUDIT_RETENTION_DAYS` | `365` | Days of audit log to keep; `0` keeps entries forever. |
 | `METRICS_ENABLED` | `true` | Expose Prometheus metrics at `/metrics` (unauthenticated, like `/health`). Set `false`/`0`/`off`/`no` to disable. |
-| `SERVICE_CREDENTIAL` | *(unset)* | If set, required as `Authorization: Bearer` on the host-facing RPCs (`Check`/`Authenticate`/`ReportAudit`). Unset leaves them open (rely on mTLS or network isolation). |
 | `TLS_CERT_FILE` / `TLS_KEY_FILE` | *(unset)* | Set both to serve HTTPS. |
 | `TLS_CLIENT_CA_FILE` | *(unset)* | With TLS enabled, require and verify client certificates against this CA (mTLS). |
 
 See [`.env.example`](.env.example) for the annotated source of truth. The
-host→Turnstile authentication options (service credential vs. mTLS) are covered
-in [ARCHITECTURE.md](ARCHITECTURE.md).
+host-facing RPCs are open at the application layer; guard them with optional
+mTLS or network isolation — see [ARCHITECTURE.md](ARCHITECTURE.md). The
+`-bootstrap` flag (or `TURNSTILE_BOOTSTRAP=true`) mints a fresh full-admin key on
+start as a break-glass recovery path.
 
 ## Testing
 
@@ -89,18 +90,18 @@ what CI runs, so a local `mage check` reproduces the CI gate.
   OR, namespace isolation) and validation (well-formedness, global deny-only).
 - `internal/ratelimit` — burst/refill, key overrides, and the reserve-then-
   confirm refund (a block on one limiter never burns a token on the other).
-- `internal/store` — key CRUD, policy optimistic concurrency, admin credentials,
-  audit filters + keyset pagination.
+- `internal/store` — key CRUD (including in-place secret rotation), policy
+  optimistic concurrency, audit filters + keyset pagination.
 - `internal/token` — authentication (generic failure collapsing), the global
-  deny ceiling, and bootstrap.
-- `internal/server` — end-to-end over an in-process Connect client: admin
-  guarding, `Check` allow/deny/rate-limit, `ReportAudit`, `QueryAudit`, and
-  policy version conflicts.
+  deny ceiling, key-only management authorization, and bootstrap.
+- `internal/server` — end-to-end over an in-process Connect client: management
+  authorization (`turnstile:` actions), `Check` allow/deny/rate-limit,
+  `ReportAudit`, `QueryAudit`, and policy version conflicts.
 
 ## Resetting state
 
 ```sh
-mage resetDB             # then restart to get a fresh bootstrap admin token
+mage resetDB             # then restart to get a fresh bootstrap key token
 ```
 
 ## CI, releases, and Docker

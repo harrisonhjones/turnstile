@@ -414,7 +414,7 @@ func (x *RateLimits) GetServiceWide() *RateLimitConfig {
 // is shown to the operator exactly once.
 type Key struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
-	Id             string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Id             string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"` // "turnstile:key:<random>" — also the resource for per-key management actions
 	Name           string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
 	Note           string                 `protobuf:"bytes,3,opt,name=note,proto3" json:"note,omitempty"`
 	Statements     []*Statement           `protobuf:"bytes,4,rep,name=statements,proto3" json:"statements,omitempty"`
@@ -859,6 +859,50 @@ func (x *UpdateKeyRequest) GetClearRateLimits() bool {
 	return false
 }
 
+type RotateKeyRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RotateKeyRequest) Reset() {
+	*x = RotateKeyRequest{}
+	mi := &file_turnstile_v1_turnstile_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RotateKeyRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RotateKeyRequest) ProtoMessage() {}
+
+func (x *RotateKeyRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_turnstile_v1_turnstile_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RotateKeyRequest.ProtoReflect.Descriptor instead.
+func (*RotateKeyRequest) Descriptor() ([]byte, []int) {
+	return file_turnstile_v1_turnstile_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *RotateKeyRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
 type DeleteKeyRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -868,7 +912,7 @@ type DeleteKeyRequest struct {
 
 func (x *DeleteKeyRequest) Reset() {
 	*x = DeleteKeyRequest{}
-	mi := &file_turnstile_v1_turnstile_proto_msgTypes[11]
+	mi := &file_turnstile_v1_turnstile_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -880,7 +924,7 @@ func (x *DeleteKeyRequest) String() string {
 func (*DeleteKeyRequest) ProtoMessage() {}
 
 func (x *DeleteKeyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_turnstile_v1_turnstile_proto_msgTypes[11]
+	mi := &file_turnstile_v1_turnstile_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -893,7 +937,7 @@ func (x *DeleteKeyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteKeyRequest.ProtoReflect.Descriptor instead.
 func (*DeleteKeyRequest) Descriptor() ([]byte, []int) {
-	return file_turnstile_v1_turnstile_proto_rawDescGZIP(), []int{11}
+	return file_turnstile_v1_turnstile_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *DeleteKeyRequest) GetId() string {
@@ -919,7 +963,7 @@ type Policy struct {
 
 func (x *Policy) Reset() {
 	*x = Policy{}
-	mi := &file_turnstile_v1_turnstile_proto_msgTypes[12]
+	mi := &file_turnstile_v1_turnstile_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -931,7 +975,7 @@ func (x *Policy) String() string {
 func (*Policy) ProtoMessage() {}
 
 func (x *Policy) ProtoReflect() protoreflect.Message {
-	mi := &file_turnstile_v1_turnstile_proto_msgTypes[12]
+	mi := &file_turnstile_v1_turnstile_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -944,7 +988,7 @@ func (x *Policy) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Policy.ProtoReflect.Descriptor instead.
 func (*Policy) Descriptor() ([]byte, []int) {
-	return file_turnstile_v1_turnstile_proto_rawDescGZIP(), []int{12}
+	return file_turnstile_v1_turnstile_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *Policy) GetStatements() []*Statement {
@@ -990,7 +1034,7 @@ type GetPolicyRequest struct {
 
 func (x *GetPolicyRequest) Reset() {
 	*x = GetPolicyRequest{}
-	mi := &file_turnstile_v1_turnstile_proto_msgTypes[13]
+	mi := &file_turnstile_v1_turnstile_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1002,7 +1046,7 @@ func (x *GetPolicyRequest) String() string {
 func (*GetPolicyRequest) ProtoMessage() {}
 
 func (x *GetPolicyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_turnstile_v1_turnstile_proto_msgTypes[13]
+	mi := &file_turnstile_v1_turnstile_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1015,7 +1059,7 @@ func (x *GetPolicyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetPolicyRequest.ProtoReflect.Descriptor instead.
 func (*GetPolicyRequest) Descriptor() ([]byte, []int) {
-	return file_turnstile_v1_turnstile_proto_rawDescGZIP(), []int{13}
+	return file_turnstile_v1_turnstile_proto_rawDescGZIP(), []int{14}
 }
 
 // UpdatePolicyRequest REPLACES the entire global policy (PUT semantics), unlike
@@ -1041,7 +1085,7 @@ type UpdatePolicyRequest struct {
 
 func (x *UpdatePolicyRequest) Reset() {
 	*x = UpdatePolicyRequest{}
-	mi := &file_turnstile_v1_turnstile_proto_msgTypes[14]
+	mi := &file_turnstile_v1_turnstile_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1053,7 +1097,7 @@ func (x *UpdatePolicyRequest) String() string {
 func (*UpdatePolicyRequest) ProtoMessage() {}
 
 func (x *UpdatePolicyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_turnstile_v1_turnstile_proto_msgTypes[14]
+	mi := &file_turnstile_v1_turnstile_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1066,7 +1110,7 @@ func (x *UpdatePolicyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdatePolicyRequest.ProtoReflect.Descriptor instead.
 func (*UpdatePolicyRequest) Descriptor() ([]byte, []int) {
-	return file_turnstile_v1_turnstile_proto_rawDescGZIP(), []int{14}
+	return file_turnstile_v1_turnstile_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *UpdatePolicyRequest) GetStatements() []*Statement {
@@ -1108,7 +1152,7 @@ type CheckRequest struct {
 
 func (x *CheckRequest) Reset() {
 	*x = CheckRequest{}
-	mi := &file_turnstile_v1_turnstile_proto_msgTypes[15]
+	mi := &file_turnstile_v1_turnstile_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1120,7 +1164,7 @@ func (x *CheckRequest) String() string {
 func (*CheckRequest) ProtoMessage() {}
 
 func (x *CheckRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_turnstile_v1_turnstile_proto_msgTypes[15]
+	mi := &file_turnstile_v1_turnstile_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1133,7 +1177,7 @@ func (x *CheckRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CheckRequest.ProtoReflect.Descriptor instead.
 func (*CheckRequest) Descriptor() ([]byte, []int) {
-	return file_turnstile_v1_turnstile_proto_rawDescGZIP(), []int{15}
+	return file_turnstile_v1_turnstile_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *CheckRequest) GetClientToken() string {
@@ -1176,7 +1220,7 @@ type CheckResponse struct {
 
 func (x *CheckResponse) Reset() {
 	*x = CheckResponse{}
-	mi := &file_turnstile_v1_turnstile_proto_msgTypes[16]
+	mi := &file_turnstile_v1_turnstile_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1188,7 +1232,7 @@ func (x *CheckResponse) String() string {
 func (*CheckResponse) ProtoMessage() {}
 
 func (x *CheckResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_turnstile_v1_turnstile_proto_msgTypes[16]
+	mi := &file_turnstile_v1_turnstile_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1201,7 +1245,7 @@ func (x *CheckResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CheckResponse.ProtoReflect.Descriptor instead.
 func (*CheckResponse) Descriptor() ([]byte, []int) {
-	return file_turnstile_v1_turnstile_proto_rawDescGZIP(), []int{16}
+	return file_turnstile_v1_turnstile_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *CheckResponse) GetAllowed() bool {
@@ -1242,7 +1286,7 @@ type RateLimitVerdict struct {
 
 func (x *RateLimitVerdict) Reset() {
 	*x = RateLimitVerdict{}
-	mi := &file_turnstile_v1_turnstile_proto_msgTypes[17]
+	mi := &file_turnstile_v1_turnstile_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1254,7 +1298,7 @@ func (x *RateLimitVerdict) String() string {
 func (*RateLimitVerdict) ProtoMessage() {}
 
 func (x *RateLimitVerdict) ProtoReflect() protoreflect.Message {
-	mi := &file_turnstile_v1_turnstile_proto_msgTypes[17]
+	mi := &file_turnstile_v1_turnstile_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1267,7 +1311,7 @@ func (x *RateLimitVerdict) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RateLimitVerdict.ProtoReflect.Descriptor instead.
 func (*RateLimitVerdict) Descriptor() ([]byte, []int) {
-	return file_turnstile_v1_turnstile_proto_rawDescGZIP(), []int{17}
+	return file_turnstile_v1_turnstile_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *RateLimitVerdict) GetLimited() bool {
@@ -1295,7 +1339,7 @@ type Principal struct {
 
 func (x *Principal) Reset() {
 	*x = Principal{}
-	mi := &file_turnstile_v1_turnstile_proto_msgTypes[18]
+	mi := &file_turnstile_v1_turnstile_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1307,7 +1351,7 @@ func (x *Principal) String() string {
 func (*Principal) ProtoMessage() {}
 
 func (x *Principal) ProtoReflect() protoreflect.Message {
-	mi := &file_turnstile_v1_turnstile_proto_msgTypes[18]
+	mi := &file_turnstile_v1_turnstile_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1320,7 +1364,7 @@ func (x *Principal) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Principal.ProtoReflect.Descriptor instead.
 func (*Principal) Descriptor() ([]byte, []int) {
-	return file_turnstile_v1_turnstile_proto_rawDescGZIP(), []int{18}
+	return file_turnstile_v1_turnstile_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *Principal) GetKeyId() string {
@@ -1353,7 +1397,7 @@ type AuthenticateRequest struct {
 
 func (x *AuthenticateRequest) Reset() {
 	*x = AuthenticateRequest{}
-	mi := &file_turnstile_v1_turnstile_proto_msgTypes[19]
+	mi := &file_turnstile_v1_turnstile_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1365,7 +1409,7 @@ func (x *AuthenticateRequest) String() string {
 func (*AuthenticateRequest) ProtoMessage() {}
 
 func (x *AuthenticateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_turnstile_v1_turnstile_proto_msgTypes[19]
+	mi := &file_turnstile_v1_turnstile_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1378,7 +1422,7 @@ func (x *AuthenticateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuthenticateRequest.ProtoReflect.Descriptor instead.
 func (*AuthenticateRequest) Descriptor() ([]byte, []int) {
-	return file_turnstile_v1_turnstile_proto_rawDescGZIP(), []int{19}
+	return file_turnstile_v1_turnstile_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *AuthenticateRequest) GetClientToken() string {
@@ -1406,7 +1450,7 @@ type AuditEntry struct {
 
 func (x *AuditEntry) Reset() {
 	*x = AuditEntry{}
-	mi := &file_turnstile_v1_turnstile_proto_msgTypes[20]
+	mi := &file_turnstile_v1_turnstile_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1418,7 +1462,7 @@ func (x *AuditEntry) String() string {
 func (*AuditEntry) ProtoMessage() {}
 
 func (x *AuditEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_turnstile_v1_turnstile_proto_msgTypes[20]
+	mi := &file_turnstile_v1_turnstile_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1431,7 +1475,7 @@ func (x *AuditEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuditEntry.ProtoReflect.Descriptor instead.
 func (*AuditEntry) Descriptor() ([]byte, []int) {
-	return file_turnstile_v1_turnstile_proto_rawDescGZIP(), []int{20}
+	return file_turnstile_v1_turnstile_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *AuditEntry) GetApiKeyId() string {
@@ -1513,7 +1557,7 @@ type ReportAuditRequest struct {
 
 func (x *ReportAuditRequest) Reset() {
 	*x = ReportAuditRequest{}
-	mi := &file_turnstile_v1_turnstile_proto_msgTypes[21]
+	mi := &file_turnstile_v1_turnstile_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1525,7 +1569,7 @@ func (x *ReportAuditRequest) String() string {
 func (*ReportAuditRequest) ProtoMessage() {}
 
 func (x *ReportAuditRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_turnstile_v1_turnstile_proto_msgTypes[21]
+	mi := &file_turnstile_v1_turnstile_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1538,7 +1582,7 @@ func (x *ReportAuditRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportAuditRequest.ProtoReflect.Descriptor instead.
 func (*ReportAuditRequest) Descriptor() ([]byte, []int) {
-	return file_turnstile_v1_turnstile_proto_rawDescGZIP(), []int{21}
+	return file_turnstile_v1_turnstile_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ReportAuditRequest) GetEntries() []*AuditEntry {
@@ -1557,7 +1601,7 @@ type ReportAuditSummary struct {
 
 func (x *ReportAuditSummary) Reset() {
 	*x = ReportAuditSummary{}
-	mi := &file_turnstile_v1_turnstile_proto_msgTypes[22]
+	mi := &file_turnstile_v1_turnstile_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1569,7 +1613,7 @@ func (x *ReportAuditSummary) String() string {
 func (*ReportAuditSummary) ProtoMessage() {}
 
 func (x *ReportAuditSummary) ProtoReflect() protoreflect.Message {
-	mi := &file_turnstile_v1_turnstile_proto_msgTypes[22]
+	mi := &file_turnstile_v1_turnstile_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1582,7 +1626,7 @@ func (x *ReportAuditSummary) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportAuditSummary.ProtoReflect.Descriptor instead.
 func (*ReportAuditSummary) Descriptor() ([]byte, []int) {
-	return file_turnstile_v1_turnstile_proto_rawDescGZIP(), []int{22}
+	return file_turnstile_v1_turnstile_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *ReportAuditSummary) GetAccepted() int64 {
@@ -1609,7 +1653,7 @@ type QueryAuditRequest struct {
 
 func (x *QueryAuditRequest) Reset() {
 	*x = QueryAuditRequest{}
-	mi := &file_turnstile_v1_turnstile_proto_msgTypes[23]
+	mi := &file_turnstile_v1_turnstile_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1621,7 +1665,7 @@ func (x *QueryAuditRequest) String() string {
 func (*QueryAuditRequest) ProtoMessage() {}
 
 func (x *QueryAuditRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_turnstile_v1_turnstile_proto_msgTypes[23]
+	mi := &file_turnstile_v1_turnstile_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1634,7 +1678,7 @@ func (x *QueryAuditRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QueryAuditRequest.ProtoReflect.Descriptor instead.
 func (*QueryAuditRequest) Descriptor() ([]byte, []int) {
-	return file_turnstile_v1_turnstile_proto_rawDescGZIP(), []int{23}
+	return file_turnstile_v1_turnstile_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *QueryAuditRequest) GetApiKeyId() string {
@@ -1710,7 +1754,7 @@ type QueryAuditResponse struct {
 
 func (x *QueryAuditResponse) Reset() {
 	*x = QueryAuditResponse{}
-	mi := &file_turnstile_v1_turnstile_proto_msgTypes[24]
+	mi := &file_turnstile_v1_turnstile_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1722,7 +1766,7 @@ func (x *QueryAuditResponse) String() string {
 func (*QueryAuditResponse) ProtoMessage() {}
 
 func (x *QueryAuditResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_turnstile_v1_turnstile_proto_msgTypes[24]
+	mi := &file_turnstile_v1_turnstile_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1735,7 +1779,7 @@ func (x *QueryAuditResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QueryAuditResponse.ProtoReflect.Descriptor instead.
 func (*QueryAuditResponse) Descriptor() ([]byte, []int) {
-	return file_turnstile_v1_turnstile_proto_rawDescGZIP(), []int{24}
+	return file_turnstile_v1_turnstile_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *QueryAuditResponse) GetEntries() []*AuditEntry {
@@ -1842,6 +1886,8 @@ const file_turnstile_v1_turnstile_proto_rawDesc = "" +
 	"\x05_nameB\a\n" +
 	"\x05_noteB\v\n" +
 	"\t_disabled\"\"\n" +
+	"\x10RotateKeyRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\"\n" +
 	"\x10DeleteKeyRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"\xf0\x01\n" +
 	"\x06Policy\x127\n" +
@@ -1927,7 +1973,7 @@ const file_turnstile_v1_turnstile_proto_rawDesc = "" +
 	"\aALLOWED\x10\x00\x12\x13\n" +
 	"\x0fUNAUTHENTICATED\x10\x01\x12\x11\n" +
 	"\rPOLICY_DENIED\x10\x02\x12\x10\n" +
-	"\fRATE_LIMITED\x10\x032\x93\x06\n" +
+	"\fRATE_LIMITED\x10\x032\xd3\x06\n" +
 	"\tTurnstile\x12@\n" +
 	"\x05Check\x12\x1a.turnstile.v1.CheckRequest\x1a\x1b.turnstile.v1.CheckResponse\x12J\n" +
 	"\fAuthenticate\x12!.turnstile.v1.AuthenticateRequest\x1a\x17.turnstile.v1.Principal\x12Q\n" +
@@ -1935,7 +1981,8 @@ const file_turnstile_v1_turnstile_proto_rawDesc = "" +
 	"\tCreateKey\x12\x1e.turnstile.v1.CreateKeyRequest\x1a\x11.turnstile.v1.Key\x12I\n" +
 	"\bListKeys\x12\x1d.turnstile.v1.ListKeysRequest\x1a\x1e.turnstile.v1.ListKeysResponse\x128\n" +
 	"\x06GetKey\x12\x1b.turnstile.v1.GetKeyRequest\x1a\x11.turnstile.v1.Key\x12>\n" +
-	"\tUpdateKey\x12\x1e.turnstile.v1.UpdateKeyRequest\x1a\x11.turnstile.v1.Key\x12C\n" +
+	"\tUpdateKey\x12\x1e.turnstile.v1.UpdateKeyRequest\x1a\x11.turnstile.v1.Key\x12>\n" +
+	"\tRotateKey\x12\x1e.turnstile.v1.RotateKeyRequest\x1a\x11.turnstile.v1.Key\x12C\n" +
 	"\tDeleteKey\x12\x1e.turnstile.v1.DeleteKeyRequest\x1a\x16.google.protobuf.Empty\x12A\n" +
 	"\tGetPolicy\x12\x1e.turnstile.v1.GetPolicyRequest\x1a\x14.turnstile.v1.Policy\x12G\n" +
 	"\fUpdatePolicy\x12!.turnstile.v1.UpdatePolicyRequest\x1a\x14.turnstile.v1.Policy\x12O\n" +
@@ -1955,7 +2002,7 @@ func file_turnstile_v1_turnstile_proto_rawDescGZIP() []byte {
 }
 
 var file_turnstile_v1_turnstile_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_turnstile_v1_turnstile_proto_msgTypes = make([]protoimpl.MessageInfo, 29)
+var file_turnstile_v1_turnstile_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
 var file_turnstile_v1_turnstile_proto_goTypes = []any{
 	(Effect)(0),                   // 0: turnstile.v1.Effect
 	(Decision)(0),                 // 1: turnstile.v1.Decision
@@ -1970,87 +2017,90 @@ var file_turnstile_v1_turnstile_proto_goTypes = []any{
 	(*ListKeysResponse)(nil),      // 10: turnstile.v1.ListKeysResponse
 	(*GetKeyRequest)(nil),         // 11: turnstile.v1.GetKeyRequest
 	(*UpdateKeyRequest)(nil),      // 12: turnstile.v1.UpdateKeyRequest
-	(*DeleteKeyRequest)(nil),      // 13: turnstile.v1.DeleteKeyRequest
-	(*Policy)(nil),                // 14: turnstile.v1.Policy
-	(*GetPolicyRequest)(nil),      // 15: turnstile.v1.GetPolicyRequest
-	(*UpdatePolicyRequest)(nil),   // 16: turnstile.v1.UpdatePolicyRequest
-	(*CheckRequest)(nil),          // 17: turnstile.v1.CheckRequest
-	(*CheckResponse)(nil),         // 18: turnstile.v1.CheckResponse
-	(*RateLimitVerdict)(nil),      // 19: turnstile.v1.RateLimitVerdict
-	(*Principal)(nil),             // 20: turnstile.v1.Principal
-	(*AuthenticateRequest)(nil),   // 21: turnstile.v1.AuthenticateRequest
-	(*AuditEntry)(nil),            // 22: turnstile.v1.AuditEntry
-	(*ReportAuditRequest)(nil),    // 23: turnstile.v1.ReportAuditRequest
-	(*ReportAuditSummary)(nil),    // 24: turnstile.v1.ReportAuditSummary
-	(*QueryAuditRequest)(nil),     // 25: turnstile.v1.QueryAuditRequest
-	(*QueryAuditResponse)(nil),    // 26: turnstile.v1.QueryAuditResponse
-	nil,                           // 27: turnstile.v1.RateLimitConfig.PerActionEntry
-	nil,                           // 28: turnstile.v1.Key.RateLimitsEntry
-	nil,                           // 29: turnstile.v1.CreateKeyRequest.RateLimitsEntry
-	nil,                           // 30: turnstile.v1.UpdateKeyRequest.RateLimitsEntry
-	(*timestamppb.Timestamp)(nil), // 31: google.protobuf.Timestamp
-	(*emptypb.Empty)(nil),         // 32: google.protobuf.Empty
+	(*RotateKeyRequest)(nil),      // 13: turnstile.v1.RotateKeyRequest
+	(*DeleteKeyRequest)(nil),      // 14: turnstile.v1.DeleteKeyRequest
+	(*Policy)(nil),                // 15: turnstile.v1.Policy
+	(*GetPolicyRequest)(nil),      // 16: turnstile.v1.GetPolicyRequest
+	(*UpdatePolicyRequest)(nil),   // 17: turnstile.v1.UpdatePolicyRequest
+	(*CheckRequest)(nil),          // 18: turnstile.v1.CheckRequest
+	(*CheckResponse)(nil),         // 19: turnstile.v1.CheckResponse
+	(*RateLimitVerdict)(nil),      // 20: turnstile.v1.RateLimitVerdict
+	(*Principal)(nil),             // 21: turnstile.v1.Principal
+	(*AuthenticateRequest)(nil),   // 22: turnstile.v1.AuthenticateRequest
+	(*AuditEntry)(nil),            // 23: turnstile.v1.AuditEntry
+	(*ReportAuditRequest)(nil),    // 24: turnstile.v1.ReportAuditRequest
+	(*ReportAuditSummary)(nil),    // 25: turnstile.v1.ReportAuditSummary
+	(*QueryAuditRequest)(nil),     // 26: turnstile.v1.QueryAuditRequest
+	(*QueryAuditResponse)(nil),    // 27: turnstile.v1.QueryAuditResponse
+	nil,                           // 28: turnstile.v1.RateLimitConfig.PerActionEntry
+	nil,                           // 29: turnstile.v1.Key.RateLimitsEntry
+	nil,                           // 30: turnstile.v1.CreateKeyRequest.RateLimitsEntry
+	nil,                           // 31: turnstile.v1.UpdateKeyRequest.RateLimitsEntry
+	(*timestamppb.Timestamp)(nil), // 32: google.protobuf.Timestamp
+	(*emptypb.Empty)(nil),         // 33: google.protobuf.Empty
 }
 var file_turnstile_v1_turnstile_proto_depIdxs = []int32{
 	0,  // 0: turnstile.v1.Statement.effect:type_name -> turnstile.v1.Effect
 	2,  // 1: turnstile.v1.StatementList.statements:type_name -> turnstile.v1.Statement
 	4,  // 2: turnstile.v1.RateLimitConfig.default:type_name -> turnstile.v1.Limit
-	27, // 3: turnstile.v1.RateLimitConfig.per_action:type_name -> turnstile.v1.RateLimitConfig.PerActionEntry
+	28, // 3: turnstile.v1.RateLimitConfig.per_action:type_name -> turnstile.v1.RateLimitConfig.PerActionEntry
 	5,  // 4: turnstile.v1.RateLimits.per_key:type_name -> turnstile.v1.RateLimitConfig
 	5,  // 5: turnstile.v1.RateLimits.service_wide:type_name -> turnstile.v1.RateLimitConfig
 	2,  // 6: turnstile.v1.Key.statements:type_name -> turnstile.v1.Statement
-	28, // 7: turnstile.v1.Key.rate_limits:type_name -> turnstile.v1.Key.RateLimitsEntry
-	31, // 8: turnstile.v1.Key.created_at:type_name -> google.protobuf.Timestamp
-	31, // 9: turnstile.v1.Key.last_used_at:type_name -> google.protobuf.Timestamp
-	31, // 10: turnstile.v1.Key.expires_at:type_name -> google.protobuf.Timestamp
+	29, // 7: turnstile.v1.Key.rate_limits:type_name -> turnstile.v1.Key.RateLimitsEntry
+	32, // 8: turnstile.v1.Key.created_at:type_name -> google.protobuf.Timestamp
+	32, // 9: turnstile.v1.Key.last_used_at:type_name -> google.protobuf.Timestamp
+	32, // 10: turnstile.v1.Key.expires_at:type_name -> google.protobuf.Timestamp
 	2,  // 11: turnstile.v1.CreateKeyRequest.statements:type_name -> turnstile.v1.Statement
-	29, // 12: turnstile.v1.CreateKeyRequest.rate_limits:type_name -> turnstile.v1.CreateKeyRequest.RateLimitsEntry
-	31, // 13: turnstile.v1.CreateKeyRequest.expires_at:type_name -> google.protobuf.Timestamp
+	30, // 12: turnstile.v1.CreateKeyRequest.rate_limits:type_name -> turnstile.v1.CreateKeyRequest.RateLimitsEntry
+	32, // 13: turnstile.v1.CreateKeyRequest.expires_at:type_name -> google.protobuf.Timestamp
 	7,  // 14: turnstile.v1.ListKeysResponse.keys:type_name -> turnstile.v1.Key
 	3,  // 15: turnstile.v1.UpdateKeyRequest.statements:type_name -> turnstile.v1.StatementList
-	30, // 16: turnstile.v1.UpdateKeyRequest.rate_limits:type_name -> turnstile.v1.UpdateKeyRequest.RateLimitsEntry
-	31, // 17: turnstile.v1.UpdateKeyRequest.expires_at:type_name -> google.protobuf.Timestamp
+	31, // 16: turnstile.v1.UpdateKeyRequest.rate_limits:type_name -> turnstile.v1.UpdateKeyRequest.RateLimitsEntry
+	32, // 17: turnstile.v1.UpdateKeyRequest.expires_at:type_name -> google.protobuf.Timestamp
 	2,  // 18: turnstile.v1.Policy.statements:type_name -> turnstile.v1.Statement
 	6,  // 19: turnstile.v1.Policy.rate_limits:type_name -> turnstile.v1.RateLimits
-	31, // 20: turnstile.v1.Policy.updated_at:type_name -> google.protobuf.Timestamp
+	32, // 20: turnstile.v1.Policy.updated_at:type_name -> google.protobuf.Timestamp
 	2,  // 21: turnstile.v1.UpdatePolicyRequest.statements:type_name -> turnstile.v1.Statement
 	6,  // 22: turnstile.v1.UpdatePolicyRequest.rate_limits:type_name -> turnstile.v1.RateLimits
-	20, // 23: turnstile.v1.CheckResponse.principal:type_name -> turnstile.v1.Principal
+	21, // 23: turnstile.v1.CheckResponse.principal:type_name -> turnstile.v1.Principal
 	1,  // 24: turnstile.v1.CheckResponse.decision:type_name -> turnstile.v1.Decision
-	19, // 25: turnstile.v1.CheckResponse.rate_limit:type_name -> turnstile.v1.RateLimitVerdict
-	31, // 26: turnstile.v1.AuditEntry.timestamp:type_name -> google.protobuf.Timestamp
-	22, // 27: turnstile.v1.ReportAuditRequest.entries:type_name -> turnstile.v1.AuditEntry
-	31, // 28: turnstile.v1.QueryAuditRequest.after:type_name -> google.protobuf.Timestamp
-	31, // 29: turnstile.v1.QueryAuditRequest.before:type_name -> google.protobuf.Timestamp
-	22, // 30: turnstile.v1.QueryAuditResponse.entries:type_name -> turnstile.v1.AuditEntry
+	20, // 25: turnstile.v1.CheckResponse.rate_limit:type_name -> turnstile.v1.RateLimitVerdict
+	32, // 26: turnstile.v1.AuditEntry.timestamp:type_name -> google.protobuf.Timestamp
+	23, // 27: turnstile.v1.ReportAuditRequest.entries:type_name -> turnstile.v1.AuditEntry
+	32, // 28: turnstile.v1.QueryAuditRequest.after:type_name -> google.protobuf.Timestamp
+	32, // 29: turnstile.v1.QueryAuditRequest.before:type_name -> google.protobuf.Timestamp
+	23, // 30: turnstile.v1.QueryAuditResponse.entries:type_name -> turnstile.v1.AuditEntry
 	4,  // 31: turnstile.v1.RateLimitConfig.PerActionEntry.value:type_name -> turnstile.v1.Limit
 	4,  // 32: turnstile.v1.Key.RateLimitsEntry.value:type_name -> turnstile.v1.Limit
 	4,  // 33: turnstile.v1.CreateKeyRequest.RateLimitsEntry.value:type_name -> turnstile.v1.Limit
 	4,  // 34: turnstile.v1.UpdateKeyRequest.RateLimitsEntry.value:type_name -> turnstile.v1.Limit
-	17, // 35: turnstile.v1.Turnstile.Check:input_type -> turnstile.v1.CheckRequest
-	21, // 36: turnstile.v1.Turnstile.Authenticate:input_type -> turnstile.v1.AuthenticateRequest
-	23, // 37: turnstile.v1.Turnstile.ReportAudit:input_type -> turnstile.v1.ReportAuditRequest
+	18, // 35: turnstile.v1.Turnstile.Check:input_type -> turnstile.v1.CheckRequest
+	22, // 36: turnstile.v1.Turnstile.Authenticate:input_type -> turnstile.v1.AuthenticateRequest
+	24, // 37: turnstile.v1.Turnstile.ReportAudit:input_type -> turnstile.v1.ReportAuditRequest
 	8,  // 38: turnstile.v1.Turnstile.CreateKey:input_type -> turnstile.v1.CreateKeyRequest
 	9,  // 39: turnstile.v1.Turnstile.ListKeys:input_type -> turnstile.v1.ListKeysRequest
 	11, // 40: turnstile.v1.Turnstile.GetKey:input_type -> turnstile.v1.GetKeyRequest
 	12, // 41: turnstile.v1.Turnstile.UpdateKey:input_type -> turnstile.v1.UpdateKeyRequest
-	13, // 42: turnstile.v1.Turnstile.DeleteKey:input_type -> turnstile.v1.DeleteKeyRequest
-	15, // 43: turnstile.v1.Turnstile.GetPolicy:input_type -> turnstile.v1.GetPolicyRequest
-	16, // 44: turnstile.v1.Turnstile.UpdatePolicy:input_type -> turnstile.v1.UpdatePolicyRequest
-	25, // 45: turnstile.v1.Turnstile.QueryAudit:input_type -> turnstile.v1.QueryAuditRequest
-	18, // 46: turnstile.v1.Turnstile.Check:output_type -> turnstile.v1.CheckResponse
-	20, // 47: turnstile.v1.Turnstile.Authenticate:output_type -> turnstile.v1.Principal
-	24, // 48: turnstile.v1.Turnstile.ReportAudit:output_type -> turnstile.v1.ReportAuditSummary
-	7,  // 49: turnstile.v1.Turnstile.CreateKey:output_type -> turnstile.v1.Key
-	10, // 50: turnstile.v1.Turnstile.ListKeys:output_type -> turnstile.v1.ListKeysResponse
-	7,  // 51: turnstile.v1.Turnstile.GetKey:output_type -> turnstile.v1.Key
-	7,  // 52: turnstile.v1.Turnstile.UpdateKey:output_type -> turnstile.v1.Key
-	32, // 53: turnstile.v1.Turnstile.DeleteKey:output_type -> google.protobuf.Empty
-	14, // 54: turnstile.v1.Turnstile.GetPolicy:output_type -> turnstile.v1.Policy
-	14, // 55: turnstile.v1.Turnstile.UpdatePolicy:output_type -> turnstile.v1.Policy
-	26, // 56: turnstile.v1.Turnstile.QueryAudit:output_type -> turnstile.v1.QueryAuditResponse
-	46, // [46:57] is the sub-list for method output_type
-	35, // [35:46] is the sub-list for method input_type
+	13, // 42: turnstile.v1.Turnstile.RotateKey:input_type -> turnstile.v1.RotateKeyRequest
+	14, // 43: turnstile.v1.Turnstile.DeleteKey:input_type -> turnstile.v1.DeleteKeyRequest
+	16, // 44: turnstile.v1.Turnstile.GetPolicy:input_type -> turnstile.v1.GetPolicyRequest
+	17, // 45: turnstile.v1.Turnstile.UpdatePolicy:input_type -> turnstile.v1.UpdatePolicyRequest
+	26, // 46: turnstile.v1.Turnstile.QueryAudit:input_type -> turnstile.v1.QueryAuditRequest
+	19, // 47: turnstile.v1.Turnstile.Check:output_type -> turnstile.v1.CheckResponse
+	21, // 48: turnstile.v1.Turnstile.Authenticate:output_type -> turnstile.v1.Principal
+	25, // 49: turnstile.v1.Turnstile.ReportAudit:output_type -> turnstile.v1.ReportAuditSummary
+	7,  // 50: turnstile.v1.Turnstile.CreateKey:output_type -> turnstile.v1.Key
+	10, // 51: turnstile.v1.Turnstile.ListKeys:output_type -> turnstile.v1.ListKeysResponse
+	7,  // 52: turnstile.v1.Turnstile.GetKey:output_type -> turnstile.v1.Key
+	7,  // 53: turnstile.v1.Turnstile.UpdateKey:output_type -> turnstile.v1.Key
+	7,  // 54: turnstile.v1.Turnstile.RotateKey:output_type -> turnstile.v1.Key
+	33, // 55: turnstile.v1.Turnstile.DeleteKey:output_type -> google.protobuf.Empty
+	15, // 56: turnstile.v1.Turnstile.GetPolicy:output_type -> turnstile.v1.Policy
+	15, // 57: turnstile.v1.Turnstile.UpdatePolicy:output_type -> turnstile.v1.Policy
+	27, // 58: turnstile.v1.Turnstile.QueryAudit:output_type -> turnstile.v1.QueryAuditResponse
+	47, // [47:59] is the sub-list for method output_type
+	35, // [35:47] is the sub-list for method input_type
 	35, // [35:35] is the sub-list for extension type_name
 	35, // [35:35] is the sub-list for extension extendee
 	0,  // [0:35] is the sub-list for field type_name
@@ -2068,7 +2118,7 @@ func file_turnstile_v1_turnstile_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_turnstile_v1_turnstile_proto_rawDesc), len(file_turnstile_v1_turnstile_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   29,
+			NumMessages:   30,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

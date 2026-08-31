@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -40,6 +41,7 @@ var (
 func main() {
 	showVersion := flag.Bool("version", false, "print the version and exit")
 	healthCheck := flag.Bool("healthcheck", false, "probe the local /health endpoint and exit 0 (healthy) or 1")
+	bootstrap := flag.Bool("bootstrap", boolEnv("TURNSTILE_BOOTSTRAP"), "mint a fresh full-admin key, log its token, then continue serving (break-glass recovery; also TURNSTILE_BOOTSTRAP)")
 	flag.Parse()
 	if *showVersion {
 		fmt.Printf("turnstile %s (commit %s, built %s)\n", version, commit, date)
@@ -52,10 +54,20 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(logger)
 
-	if err := run(); err != nil {
+	if err := run(*bootstrap); err != nil {
 		slog.Error("fatal", "error", err)
 		os.Exit(1)
 	}
+}
+
+// boolEnv reports whether an env var is set to a truthy value
+// (true/1/yes/on, case-insensitive).
+func boolEnv(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
+	case "true", "1", "yes", "on":
+		return true
+	}
+	return false
 }
 
 // runHealthcheck probes the server's own /health endpoint over the loopback and
@@ -98,7 +110,7 @@ func runHealthcheck() int {
 	return 0
 }
 
-func run() error {
+func run(breakGlass bool) error {
 	cfg, err := config.Load()
 	if err != nil {
 		return err
@@ -112,15 +124,26 @@ func run() error {
 
 	ctx := context.Background()
 
-	// First-run bootstrap: seed a default policy and an admin credential, and
-	// print the admin token once. Deleting all admin credentials re-seeds here.
-	adminToken, err := token.BootstrapIfEmpty(ctx, db, time.Now())
+	// First-run bootstrap: seed a default policy and, if the key store is empty, a
+	// full-admin key, logging its token once. The -bootstrap break-glass path
+	// (below) mints a fresh admin key even when keys already exist.
+	bootstrapToken, err := token.BootstrapIfEmpty(ctx, db, time.Now())
 	if err != nil {
 		return err
 	}
-	if adminToken != "" {
-		slog.Warn("created bootstrap admin credential — store this token now, it will not be shown again",
-			"admin_token", adminToken)
+	if bootstrapToken != "" {
+		slog.Warn("created bootstrap management key — store this token now, it will not be shown again",
+			"token", bootstrapToken)
+	}
+	// Break-glass recovery: mint a fresh full-admin key even when keys already
+	// exist, for when the last admin key was lost/deleted.
+	if breakGlass {
+		tok, err := token.MintAdminKey(ctx, db, time.Now(), "break-glass")
+		if err != nil {
+			return err
+		}
+		slog.Warn("break-glass: minted a fresh full-admin key — store this token now, it will not be shown again",
+			"token", tok)
 	}
 
 	// Load the global policy into an in-memory cache for fast authorization.
@@ -151,13 +174,12 @@ func run() error {
 	go rateLimiter.RunEviction(bgCtx, 10*time.Minute)
 
 	svc := server.New(server.Deps{
-		Store:             db,
-		Authenticator:     authenticator,
-		Authorizer:        authorizer,
-		PolicyCache:       policyCache,
-		RateLimiter:       rateLimiter,
-		AuditWriter:       auditWriter,
-		ServiceCredential: cfg.ServiceCredential,
+		Store:         db,
+		Authenticator: authenticator,
+		Authorizer:    authorizer,
+		PolicyCache:   policyCache,
+		RateLimiter:   rateLimiter,
+		AuditWriter:   auditWriter,
 	})
 
 	// Gate that makes graceful shutdown drain in-flight requests correctly even
@@ -220,8 +242,7 @@ func run() error {
 
 	serveErr := make(chan error, 1)
 	go func() {
-		slog.Info("starting server", "version", version, "commit", commit, "addr", cfg.ListenAddr, "tls", cfg.TLSEnabled(), "mtls", cfg.MutualTLS(),
-			"service_credential_required", cfg.ServiceCredential != "")
+		slog.Info("starting server", "version", version, "commit", commit, "addr", cfg.ListenAddr, "tls", cfg.TLSEnabled(), "mtls", cfg.MutualTLS())
 		var serveError error
 		if cfg.TLSEnabled() {
 			serveError = srv.ListenAndServeTLS(cfg.TLSCertFile, cfg.TLSKeyFile)

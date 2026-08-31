@@ -30,6 +30,18 @@ func (az *Authorizer) Authorize(key *store.APIKey, action string, resources ...s
 	return policy.EvaluateLayers(action, resources, az.cache.GlobalStatements(), key.Statements)
 }
 
+// AuthorizeManagement decides whether key may perform a management action
+// (turnstile:<op>) on the target resource, evaluating ONLY the key's own
+// statements — the global deny-only ceiling is deliberately NOT applied. This
+// keeps a broad global deny (a ceiling meant for end-user/business actions) from
+// locking operators out of the management API. A nil key is denied.
+func (az *Authorizer) AuthorizeManagement(key *store.APIKey, action string, resources ...string) policy.Decision {
+	if key == nil {
+		return policy.Decision{Allowed: false}
+	}
+	return policy.EvaluateLayers(action, resources, key.Statements)
+}
+
 // GrantsAction reports whether key could ever perform action on some resource,
 // merging global policy with the key's statements. It is a coarse,
 // resource-independent hint (see policy.GrantsAction) — not an authorization

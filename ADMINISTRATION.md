@@ -2,15 +2,17 @@
 
 This guide is for **operators**: running Turnstile, minting and managing API
 keys, editing the global policy, browsing the audit log, and securing the
-host→Turnstile connection (service credential or mTLS).
+host→Turnstile connection (mTLS or network isolation).
 
 For the other side — how a host *service* calls `Check`/`Authenticate` and
 batch-reports audit — see [CLIENT-INTEGRATION.md](CLIENT-INTEGRATION.md).
 
 All management RPCs are `POST /turnstile.v1.Turnstile/<Method>` (Connect
-HTTP/JSON) and require an **admin credential** as an `Authorization: Bearer`
-header. The examples below use `curl`; the same operations are available in the
-web console at `/ui/`.
+HTTP/JSON) and require a **management key** — an API key whose own policy allows
+the matching `turnstile:<op>` action — as an `Authorization: Bearer` header
+(see [Management access](#management-access-and-scoped-roles) below). The
+examples below use `curl`; the same operations are available in the web console
+at `/ui/`.
 
 ## Running the service
 
@@ -60,27 +62,82 @@ scrape. In order of preference:
 
 If none of these fit your deployment, set `METRICS_ENABLED=false`.
 
-### The bootstrap admin credential
+### The bootstrap management key
 
-On first start against an empty database, Turnstile seeds a default policy and a
-**bootstrap admin credential**, logging the token **once**:
+On first start against an **empty key store**, Turnstile seeds a default policy
+and a **bootstrap management key** — a full-admin key (`allow turnstile:* on *`)
+— logging the token **once**:
 
 ```json
-{"time":"2026-08-25T12:00:00Z","level":"WARN","msg":"created bootstrap admin credential — store this token now, it will not be shown again","admin_token":"tsa_..."}
+{"time":"2026-08-25T12:00:00Z","level":"WARN","msg":"created bootstrap management key — store this token now, it will not be shown again","token":"tsk_..."}
 ```
 
 Save it — it guards every management RPC and the web console. Only its SHA-256
-hash is stored, so it cannot be recovered later.
+hash is stored, so it cannot be recovered later. The bootstrap key has no special
+status: it is an ordinary key, deletable and rotatable like any other.
 
-**Lockout recovery.** There is intentionally no "can't delete the last admin"
-guard. If every admin credential is lost, delete the credential rows (e.g. stop
-the service and clear `admin_credentials`, or use `mage resetDB` to wipe the
-whole database) and restart: an empty `admin_credentials` table re-seeds a fresh
-bootstrap credential on the next start.
+**Break-glass recovery.** If every key that can manage is lost, restart the
+service with the `-bootstrap` flag (or `TURNSTILE_BOOTSTRAP=true` in the
+environment). On start it mints a *fresh* full-admin key and logs its token
+**once** (again under the `token` field), even when keys already exist — so
+whoever controls the process can always recover:
 
-> Admin credentials are currently all-or-nothing (any valid one grants full
-> management access) and there is no RPC to create/rotate them yet — bootstrap
-> seeding and the recovery path above are the only ways to mint one.
+```sh
+./turnstile -bootstrap
+# or:  TURNSTILE_BOOTSTRAP=true ./turnstile
+```
+
+There is intentionally no "can't delete the last admin" guard — break-glass is
+the recovery net.
+
+### Management access and scoped roles
+
+Management authorization is just policy. Each management RPC checks that the
+**caller's own key** allows a `turnstile:`-namespaced action; the key is
+evaluated against **its own statements only** (the global deny-only ceiling does
+**not** gate `turnstile:` actions). The `turnstile:` namespace is reserved for
+this — host services must not use it for their own vocabulary.
+
+The action vocabulary, and the resource each authorizes against:
+
+| Action | RPC | Resource |
+|---|---|---|
+| `turnstile:create-key` | `CreateKey` | `*` |
+| `turnstile:get-key` | `GetKey` | the target key's id |
+| `turnstile:list-keys` | `ListKeys` | `*` |
+| `turnstile:update-key` | `UpdateKey` | the target key's id |
+| `turnstile:rotate-key` | `RotateKey` | the target key's id |
+| `turnstile:delete-key` | `DeleteKey` | the target key's id |
+| `turnstile:read-policy` | `GetPolicy` | `*` |
+| `turnstile:update-policy` | `UpdatePolicy` | `*` |
+| `turnstile:query-audit` | `QueryAudit` | `*` |
+
+Per-key operations (`get`/`update`/`rotate`/`delete`) authorize against the
+**target key's id**, which *is* its authorization resource
+(`turnstile:key:<random-hex>`); collection/policy/audit operations authorize
+against `*`. Roles are therefore just policies on a key:
+
+- **Full admin** — `allow turnstile:* on *`.
+- **Auditor** — `allow turnstile:query-audit on *`.
+- **Scoped key-manager** — `allow turnstile:{get,update,rotate}-key on
+  turnstile:key:<that-id>` plus `allow turnstile:list-keys on *`.
+
+Grant these with `CreateKey`/`UpdateKey` like any other statements. Note that a
+key allowing `turnstile:update-policy` or `turnstile:update-key` on itself can
+grant itself more capability — self-escalation is inherent to admin, so scope
+those grants deliberately.
+
+**Rotating a management (or client) key.** `RotateKey` regenerates a key's secret
+in place — same id, policy, rate limits, and name — and returns the new plaintext
+token once; the old token stops working immediately. Governed by
+`turnstile:rotate-key` on that key's id.
+
+```sh
+curl -sS http://localhost:8080/turnstile.v1.Turnstile/RotateKey \
+  -H "Content-Type: application/json" -H "Authorization: Bearer $MGMT_TOKEN" \
+  -d '{"id": "turnstile:key:..."}'
+# -> { ..., "plaintextToken": "tsk_..." }   (shown once)
+```
 
 ## Managing keys
 
@@ -91,7 +148,7 @@ policy statements and rate-limit overrides that `Check` evaluates. Mint one with
 ```sh
 curl -sS http://localhost:8080/turnstile.v1.Turnstile/CreateKey \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Authorization: Bearer $MGMT_TOKEN" \
   -d '{
     "name": "photos-reader",
     "note": "read-only access for the reporting job",
@@ -111,24 +168,24 @@ A statement's `effect` is `ALLOW` or `DENY`. `note` is a free-form human label
 for the key. A key's `rateLimits` is a plain map of `action → limit` (per-action
 overrides only; the baseline comes from the global policy's per-key defaults).
 
-Other key operations (all admin-gated):
+Other key operations (each gated by its own `turnstile:` action):
 
 ```sh
 # List keys (omit includeDisabled to hide disabled ones).
-curl -sS .../ListKeys   -H "Authorization: Bearer $ADMIN_TOKEN" \
+curl -sS .../ListKeys   -H "Authorization: Bearer $MGMT_TOKEN" \
   -H "Content-Type: application/json" -d '{"includeDisabled": true}'
 
 # Fetch one key.
-curl -sS .../GetKey     -H "Authorization: Bearer $ADMIN_TOKEN" \
-  -H "Content-Type: application/json" -d '{"id": "key_..."}'
+curl -sS .../GetKey     -H "Authorization: Bearer $MGMT_TOKEN" \
+  -H "Content-Type: application/json" -d '{"id": "turnstile:key:..."}'
 
 # Disable a key (a partial update: unset fields are left unchanged).
-curl -sS .../UpdateKey  -H "Authorization: Bearer $ADMIN_TOKEN" \
-  -H "Content-Type: application/json" -d '{"id": "key_...", "disabled": true}'
+curl -sS .../UpdateKey  -H "Authorization: Bearer $MGMT_TOKEN" \
+  -H "Content-Type: application/json" -d '{"id": "turnstile:key:...", "disabled": true}'
 
 # Delete a key.
-curl -sS .../DeleteKey  -H "Authorization: Bearer $ADMIN_TOKEN" \
-  -H "Content-Type: application/json" -d '{"id": "key_..."}'
+curl -sS .../DeleteKey  -H "Authorization: Bearer $MGMT_TOKEN" \
+  -H "Content-Type: application/json" -d '{"id": "turnstile:key:..."}'
 ```
 
 `UpdateKey` is a true partial update: absent scalar fields are left unchanged.
@@ -147,7 +204,7 @@ back with `UpdatePolicy`:
 
 ```sh
 curl -sS http://localhost:8080/turnstile.v1.Turnstile/UpdatePolicy \
-  -H "Content-Type: application/json" -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" -H "Authorization: Bearer $MGMT_TOKEN" \
   -d '{
     "statements": [ { "effect": "DENY", "actions": ["photos:deleteAlbum"], "resources": ["*"] } ],
     "rateLimits": { "perKey": { "default": { "perMinute": 120 } }, "serviceWide": { "default": { "perMinute": 600 } } },
@@ -182,7 +239,7 @@ status, and time range, with keyset pagination:
 
 ```sh
 curl -sS http://localhost:8080/turnstile.v1.Turnstile/QueryAudit \
-  -H "Content-Type: application/json" -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" -H "Authorization: Bearer $MGMT_TOKEN" \
   -d '{
     "actionPrefix": "photos:",
     "status": 403,
@@ -199,24 +256,12 @@ exhausted). The same view is available in the web console's Audit tab. Retention
 ## Securing host → Turnstile
 
 Authorization keys off the namespaced action and the presented client token —
-never the calling host's identity. But you still want to control *which hosts*
-may reach the service-facing RPCs (`Check`, `Authenticate`, `ReportAudit`).
-Choose **one** of:
+never the calling host's identity. The service-facing RPCs (`Check`,
+`Authenticate`, `ReportAudit`) are **open at the application layer** — there is
+no service credential to configure. Control *which hosts* may reach them at the
+transport/network layer, with **optional mTLS** and/or network isolation.
 
-### Option A — shared service credential
-
-Set `SERVICE_CREDENTIAL` to any secret string. When set, those three RPCs
-require it as an `Authorization: Bearer` header (constant-time compared);
-requests without it get `Unauthenticated`. Simple, but it's a shared static
-secret. (Management RPCs are unaffected — they always require the admin
-credential.)
-
-```sh
-SERVICE_CREDENTIAL=$(openssl rand -hex 32) ./turnstile
-# hosts then send:  -H "Authorization: Bearer <that value>"  on Check/Authenticate/ReportAudit
-```
-
-### Option B — mTLS
+### mTLS (optional)
 
 Serve HTTPS and require client certificates, so only hosts holding a cert signed
 by your CA can connect at all. Set:
@@ -251,18 +296,18 @@ openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -days 365 -nodes \
   -keyout server.key -out server.crt -subj "/CN=turnstile.internal"
 ```
 
-Hosts then present `host.crt`/`host.key` on the connection. With mTLS you can
-leave `SERVICE_CREDENTIAL` unset — the client certificate is the host's identity.
-See [CLIENT-INTEGRATION.md](CLIENT-INTEGRATION.md#authenticating-the-host) for the
+Hosts then present `host.crt`/`host.key` on the connection — the client
+certificate is the host's identity. See
+[CLIENT-INTEGRATION.md](CLIENT-INTEGRATION.md#authenticating-the-host) for the
 client side.
 
-When neither option is configured, the service-facing RPCs are open, so rely on
-network isolation (e.g. a private subnet) in that case.
+Without mTLS the service-facing RPCs are reachable by anyone who can connect, so
+rely on network isolation (e.g. a private subnet) in that case.
 
 ## The web console
 
 The management UI is served at `http://localhost:8080/ui/` (root redirects
-there). Sign in with an admin credential; it drives the same management RPCs
+there). Sign in with a management key; it drives the same management RPCs
 described above to create/edit keys, edit the policy, and browse audit. It is a
 plain API client — see the security note in
 [ARCHITECTURE.md](ARCHITECTURE.md#management-ui-security-note).

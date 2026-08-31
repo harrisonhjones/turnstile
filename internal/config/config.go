@@ -26,12 +26,6 @@ type Config struct {
 	// pruning (keep forever).
 	AuditRetentionDays int
 
-	// ServiceCredential, when set, is required in the Authorization: Bearer
-	// metadata of Check/Authenticate/ReportAudit calls — the "service
-	// credential in metadata" host→Turnstile auth option. Empty leaves those
-	// RPCs open (rely on network isolation or mTLS instead).
-	ServiceCredential string
-
 	// TLS: when TLSCertFile and TLSKeyFile are both set, the server serves
 	// HTTPS. When TLSClientCAFile is also set, client certificates are required
 	// and verified against it (mTLS) — the "mTLS" host→Turnstile auth option.
@@ -55,13 +49,12 @@ func Load() (*Config, error) {
 	}
 
 	cfg := &Config{
-		ListenAddr:        envOrDefault("LISTEN_ADDR", ":8080"),
-		DBPath:            envOrDefault("DB_PATH", "turnstile.db"),
-		ServiceCredential: os.Getenv("SERVICE_CREDENTIAL"),
-		TLSCertFile:       os.Getenv("TLS_CERT_FILE"),
-		TLSKeyFile:        os.Getenv("TLS_KEY_FILE"),
-		TLSClientCAFile:   os.Getenv("TLS_CLIENT_CA_FILE"),
-		MetricsEnabled:    boolEnvOrDefault("METRICS_ENABLED", true),
+		ListenAddr:      envOrDefault("LISTEN_ADDR", ":8080"),
+		DBPath:          envOrDefault("DB_PATH", "turnstile.db"),
+		TLSCertFile:     os.Getenv("TLS_CERT_FILE"),
+		TLSKeyFile:      os.Getenv("TLS_KEY_FILE"),
+		TLSClientCAFile: os.Getenv("TLS_CLIENT_CA_FILE"),
+		MetricsEnabled:  boolEnvOrDefault("METRICS_ENABLED", true),
 	}
 
 	retention, err := intEnvOrDefault("AUDIT_RETENTION_DAYS", defaultAuditRetentionDays)

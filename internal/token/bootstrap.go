@@ -3,6 +3,7 @@ package token
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"harrisonhjones.com/turnstile/internal/policy"
@@ -10,18 +11,32 @@ import (
 	"harrisonhjones.com/turnstile/internal/store"
 )
 
+// fullAdminStatements grants every management action on every resource —
+// allow turnstile:* on *. This is what makes a key a full admin; it is an
+// ordinary key statement, evaluated by the same engine as everything else.
+func fullAdminStatements() []policy.Statement {
+	return []policy.Statement{{
+		Effect:    policy.Allow,
+		Actions:   []string{"turnstile:*"},
+		Resources: []string{"*"},
+		Note:      "full management access",
+	}}
+}
+
 // BootstrapIfEmpty seeds first-run state:
 //
-//   - A default global policy (empty deny-only ceiling with sane rate-limit
+//   - The default global policy (an empty deny-only ceiling with sane rate-limit
 //     defaults) if none exists yet.
-//   - A bootstrap admin credential if the admin_credentials table is empty. Its
-//     plaintext is returned so the caller can log it exactly once.
+//   - A full-admin bootstrap key if the api_keys table is empty. Its plaintext
+//     token is returned so the caller can log it exactly once.
 //
-// Deleting every admin credential and restarting re-seeds a fresh one: this is
-// the intentional lockout-recovery path. Unlike a host's own bootstrap key,
-// Turnstile does NOT seed any API keys — client keys are minted by an operator
-// through the management API.
-func BootstrapIfEmpty(ctx context.Context, s *store.Store, now time.Time) (adminToken string, err error) {
+// Management is governed by the same keys and policy engine as everything else,
+// so the bootstrap key is just an ordinary key that allows turnstile:* on *. It
+// has no special status — it can be rotated or deleted like any other key. If you
+// lock yourself out (delete/disable the last admin key), the break-glass path
+// (MintAdminKey, via the -bootstrap flag / TURNSTILE_BOOTSTRAP env) mints a fresh
+// full-admin key even when keys already exist.
+func BootstrapIfEmpty(ctx context.Context, s *store.Store, now time.Time) (token string, err error) {
 	// Seed a default global policy if none exists.
 	if _, gerr := s.GetGlobalPolicy(ctx); gerr == store.ErrNotFound {
 		if err := s.UpsertGlobalPolicy(ctx, defaultGlobalPolicy(now)); err != nil {
@@ -31,27 +46,42 @@ func BootstrapIfEmpty(ctx context.Context, s *store.Store, now time.Time) (admin
 		return "", gerr
 	}
 
-	count, err := s.CountAdminCredentials(ctx)
+	count, err := s.CountAPIKeys(ctx)
 	if err != nil {
 		return "", err
 	}
 	if count > 0 {
 		return "", nil
 	}
+	return MintAdminKey(ctx, s, now, "bootstrap")
+}
 
-	plaintext, hash, err := Generate(AdminPrefix)
+// MintAdminKey creates a new full-admin key (allow turnstile:* on *) and returns
+// its plaintext token to log exactly once. It backs both first-run bootstrap and
+// break-glass recovery — the latter mints one even when keys already exist. The
+// key's name is namePrefix plus a short suffix from its random id, so repeated
+// mints never collide on the UNIQUE(name) constraint.
+func MintAdminKey(ctx context.Context, s *store.Store, now time.Time, namePrefix string) (string, error) {
+	plaintext, hash, err := Generate(APIKeyPrefix)
 	if err != nil {
 		return "", err
 	}
-	cred := &store.AdminCredential{
-		ID:        NewID("adm"),
-		Name:      "bootstrap",
-		CredHash:  hash,
-		Note:      "Bootstrap admin credential created on first run.",
-		CreatedAt: now,
+	id := NewID("key")
+	// Discriminator from the id's random hex tail (unique per key).
+	suffix := id[strings.LastIndex(id, ":")+1:]
+	if len(suffix) > 8 {
+		suffix = suffix[:8]
 	}
-	if err := s.CreateAdminCredential(ctx, cred); err != nil {
-		return "", fmt.Errorf("create bootstrap admin credential: %w", err)
+	k := &store.APIKey{
+		ID:         id,
+		Name:       namePrefix + "-" + suffix,
+		KeyHash:    hash,
+		Statements: fullAdminStatements(),
+		Note:       "Full-admin key created by " + namePrefix + ".",
+		CreatedAt:  now,
+	}
+	if err := s.CreateAPIKey(ctx, k); err != nil {
+		return "", fmt.Errorf("create %s key: %w", namePrefix, err)
 	}
 	return plaintext, nil
 }

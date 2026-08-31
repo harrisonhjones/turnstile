@@ -162,6 +162,26 @@ func (s *Store) UpdateAPIKeyFunc(ctx context.Context, id string, mutate func(*AP
 	return key, nil
 }
 
+// RotateAPIKey replaces a key's token hash in place, keeping its id, policy,
+// rate limits, name, and other fields. Returns the updated key, or ErrNotFound
+// if the id does not exist. The old token's hash is gone, so it stops
+// authenticating immediately.
+func (s *Store) RotateAPIKey(ctx context.Context, id, newHash string) (*APIKey, error) {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE api_keys SET key_hash = ? WHERE id = ?`, newHash, id)
+	if err != nil {
+		return nil, fmt.Errorf("rotate api key: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return nil, fmt.Errorf("rotate api key rows affected: %w", err)
+	}
+	if n == 0 {
+		return nil, ErrNotFound
+	}
+	return s.GetAPIKeyByID(ctx, id)
+}
+
 // DeleteAPIKey removes a key by ID. Returns ErrNotFound if no row was deleted.
 func (s *Store) DeleteAPIKey(ctx context.Context, id string) error {
 	res, err := s.db.ExecContext(ctx, `DELETE FROM api_keys WHERE id = ?`, id)

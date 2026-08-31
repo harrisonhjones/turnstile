@@ -26,11 +26,17 @@ service Turnstile {
   // POST with a JSON array of entries, no streaming client needed.
   rpc ReportAudit(ReportAuditRequest) returns (ReportAuditSummary);
 
-  // Management RPCs. All require an admin credential (see the service docs).
+  // Management RPCs. Each requires the caller to present a key whose policy
+  // allows the matching turnstile:<op> action (e.g. turnstile:create-key) on the
+  // target resource. There is no separate "admin credential" — management is just
+  // another action evaluated by the policy engine.
   rpc CreateKey(CreateKeyRequest) returns (Key);
   rpc ListKeys(ListKeysRequest) returns (ListKeysResponse);
   rpc GetKey(GetKeyRequest) returns (Key);
   rpc UpdateKey(UpdateKeyRequest) returns (Key);
+  // RotateKey regenerates a key's secret in place: same id, policy, rate limits,
+  // and name; a new token is returned once and the old one stops working.
+  rpc RotateKey(RotateKeyRequest) returns (Key);
   rpc DeleteKey(DeleteKeyRequest) returns (google.protobuf.Empty);
   rpc GetPolicy(GetPolicyRequest) returns (Policy);
   rpc UpdatePolicy(UpdatePolicyRequest) returns (Policy); // optimistic version check
@@ -96,7 +102,7 @@ message RateLimits {
 // SHA-256 hash. plaintext_token is populated ONLY in the CreateKey response and
 // is shown to the operator exactly once.
 message Key {
-  string id = 1;
+  string id = 1; // "turnstile:key:<random>" — also the resource for per-key management actions
   string name = 2;
   string note = 3;
   repeated Statement statements = 4;
@@ -146,6 +152,10 @@ message UpdateKeyRequest {
   google.protobuf.Timestamp expires_at = 7; // present = set expiry to this
   bool clear_expiry = 8; // true = remove any expiry (exclusive with expires_at)
   bool clear_rate_limits = 9; // true = remove all overrides (exclusive with rate_limits)
+}
+
+message RotateKeyRequest {
+  string id = 1;
 }
 
 message DeleteKeyRequest {

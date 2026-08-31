@@ -28,11 +28,11 @@ why management is usable without a gRPC client.
   │            ├────────►│    ├─ token.Authenticator  (authn)        │
   │  proxy /   │         │    ├─ token.Authorizer     (authz)        │──► store (SQLite)
   │  gateway   │◄────────┤    │     └─ policy.Evaluate + PolicyCache  │      api_keys
-  │            │ verdict │    └─ ratelimit.Manager    (limits)       │      admin_credentials
-  │            │         │                                           │      global_policy
-  │            ├────────►│  ReportAudit (batch) ──► audit.Writer ────┼──►   audit_log
+  │            │ verdict │    └─ ratelimit.Manager    (limits)       │      global_policy
+  │            │         │                                           │      audit_log
+  │            ├────────►│  ReportAudit (batch) ──► audit.Writer ────┼──►   store
   └────────────┘  audit  │                                           │
-                         │  management RPCs (admin-guarded) ─────────┼──► store
+                         │  management RPCs (turnstile:-guarded) ────┼──► store
                          │  /ui/  embedded Ionic React SPA           │
                          └─────────────────────────────────────────┘
 ```
@@ -45,15 +45,16 @@ why management is usable without a gRPC client.
   and POSTs them up afterward (one call, a JSON array of entries, up to a
   server-enforced per-call cap). Unary rather than client-streaming so hosts can
   call it as plain JSON over HTTP without a streaming client.
-- **Management RPCs** (`CreateKey`, …, `UpdatePolicy`, `QueryAudit`) require an
-  admin credential and back the web UI.
+- **Management RPCs** (`CreateKey`, …, `UpdatePolicy`, `QueryAudit`) require the
+  caller's own key to allow the matching `turnstile:<op>` action, and back the
+  web UI.
 
 ## Packages
 
 | Package | Responsibility |
 |---|---|
 | `internal/policy` | The domain-agnostic statement engine: `Evaluate` (deny-wins → first allow → default deny), wildcard matching, and validation (well-formedness + global deny-only). Knows nothing about any host's vocabulary. |
-| `internal/token` | Token/credential generation + hashing, `Authenticator` (API keys and admin credentials), `Authorizer` (merges global ceiling under the key), the in-memory `PolicyCache`, and first-run `BootstrapIfEmpty`. |
+| `internal/token` | Token generation + hashing, `Authenticator` (API keys), `Authorizer` (the `Check` hot path merges the global ceiling under the key; `AuthorizeManagement` evaluates the caller key's own statements only, for `turnstile:` actions), the in-memory `PolicyCache`, and first-run `BootstrapIfEmpty`. |
 | `internal/ratelimit` | `Manager` of per-key and service-wide token buckets, resolved from policy, with live rate updates and reserve-then-confirm semantics. |
 | `internal/audit` | Background `Writer` (drains at shutdown) and the retention prune loop. |
 | `internal/store` | SQLite schema + typed accessors over `*sql.DB`. |
@@ -114,26 +115,46 @@ to a single `UNAUTHENTICATED` decision (and a single client-facing error on
 `Authenticate`), so a caller can't distinguish "no such token" from a real but
 disabled/expired one. The specific reason is logged for operators.
 
-**Guarding the guard.** Two credentials gate access, enforced per-RPC:
-management RPCs require an admin credential (`tsa_…`) in `Authorization: Bearer`
-metadata; the host-facing RPCs optionally require a shared service credential
-(`SERVICE_CREDENTIAL`) or are protected by mTLS. A bootstrap admin credential is
-seeded and logged once on first run; deleting all of them re-seeds on restart —
-there is no "can't delete the last one" guard, by design, so an operator can
-always recover from lockout.
+**Guarding the guard.** There is one credential type — an API key (`tsk_…`) in
+`Authorization: Bearer` metadata. Management RPCs are authorized by the *caller's
+own key* allowing the matching `turnstile:<op>` action: the key is authenticated,
+then its own statements are evaluated (`AuthorizeManagement`) against the action
+and a resource — the **target key's id** for per-key ops (`get`/`update`/`rotate`/
+`delete`-key) or `*` for `create-key`/`list-keys`/policy/audit. Full admin is
+`allow turnstile:* on *`. The `turnstile:` namespace is reserved for this, and the
+global deny-only ceiling **does not** gate `turnstile:` actions — management is
+governed solely by the caller key's own statements (this avoids a ceiling-based
+lockout). Because a key with `turnstile:update-policy` or `turnstile:update-key`
+on itself can grant itself more capability, admin is inherently self-escalating —
+scope those grants deliberately.
 
-**Only the hash is stored.** API keys and admin credentials are opaque,
-high-entropy strings; only their SHA-256 hash is persisted and looked up, so
-there is no plaintext secret at rest and no constant-time-comparison concern.
-`CreateKey` returns the plaintext once.
+The host-facing RPCs (`Check`/`Authenticate`/`ReportAudit`) are **app-layer
+open** — there is no service credential; guard them with optional mTLS / network
+isolation. On first start against an empty key store, a full-admin bootstrap key
+is seeded and its token logged once; the `-bootstrap` flag (or
+`TURNSTILE_BOOTSTRAP=true`) is the break-glass path that mints a *fresh* full-admin
+key even when keys already exist. The bootstrap key has no special status — it is
+an ordinary key, deletable and rotatable — so lockout recovery is always the
+break-glass mint, not a "can't delete the last one" guard.
+
+**Key id format.** A key's id is `turnstile:key:<random-hex>`, and that id **is**
+the authorization resource for per-key management actions, so a policy author
+pastes the id verbatim (e.g. `turnstile:key:*` for all keys, or an exact id for
+one).
+
+**Only the hash is stored.** API keys are opaque, high-entropy strings; only their
+SHA-256 hash is persisted and looked up, so there is no plaintext secret at rest
+and no constant-time-comparison concern. `CreateKey` returns the plaintext once;
+`RotateKey` regenerates it in place (same id/policy/limits/name) and the old token
+stops working immediately.
 
 ## Management UI security note
 
-The embedded SPA is a plain API client: it authenticates by sending the admin
-credential as a `Bearer` header and stores that credential in the browser's
+The embedded SPA is a plain API client: it authenticates by sending a management
+key as a `Bearer` header and stores that key in the browser's
 `localStorage`. `localStorage` is readable by any script in the origin, so an
 XSS (or a compromised SPA dependency) could exfiltrate a long-lived,
-full-privilege admin credential. This is an accepted tradeoff for an
+full-privilege management key. This is an accepted tradeoff for an
 operator-only console that is expected to be reached over localhost or a trusted
 network; React's default escaping mitigates injection. If the console is ever
 exposed more broadly, move the token to memory-only (re-prompt on reload) or a

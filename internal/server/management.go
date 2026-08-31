@@ -35,7 +35,7 @@ func invalidArg(format string, args ...any) error {
 // CreateKey mints a new API key and returns it with the plaintext token set
 // exactly once.
 func (h *Handler) CreateKey(ctx context.Context, req *connect.Request[turnstilev1.CreateKeyRequest]) (*connect.Response[turnstilev1.Key], error) {
-	if _, err := h.requireAdmin(ctx, req.Header()); err != nil {
+	if _, err := h.requireManage(ctx, req.Header(), "turnstile:create-key", "*"); err != nil {
 		return nil, err
 	}
 	r := req.Msg
@@ -79,7 +79,7 @@ func (h *Handler) CreateKey(ctx context.Context, req *connect.Request[turnstilev
 // ListKeys returns keys, optionally including disabled and filtered by owner
 // namespace.
 func (h *Handler) ListKeys(ctx context.Context, req *connect.Request[turnstilev1.ListKeysRequest]) (*connect.Response[turnstilev1.ListKeysResponse], error) {
-	if _, err := h.requireAdmin(ctx, req.Header()); err != nil {
+	if _, err := h.requireManage(ctx, req.Header(), "turnstile:list-keys", "*"); err != nil {
 		return nil, err
 	}
 	keys, err := h.store.ListAPIKeys(ctx, req.Msg.IncludeDisabled)
@@ -95,11 +95,11 @@ func (h *Handler) ListKeys(ctx context.Context, req *connect.Request[turnstilev1
 
 // GetKey returns a single key by id.
 func (h *Handler) GetKey(ctx context.Context, req *connect.Request[turnstilev1.GetKeyRequest]) (*connect.Response[turnstilev1.Key], error) {
-	if _, err := h.requireAdmin(ctx, req.Header()); err != nil {
-		return nil, err
-	}
 	if req.Msg.Id == "" {
 		return nil, invalidArg("id is required")
+	}
+	if _, err := h.requireManage(ctx, req.Header(), "turnstile:get-key", req.Msg.Id); err != nil {
+		return nil, err
 	}
 	k, err := h.store.GetAPIKeyByID(ctx, req.Msg.Id)
 	if err != nil {
@@ -112,12 +112,12 @@ func (h *Handler) GetKey(ctx context.Context, req *connect.Request[turnstilev1.G
 // statements/rate_limits are left unchanged; expiry is set via expires_at or
 // removed via clear_expiry.
 func (h *Handler) UpdateKey(ctx context.Context, req *connect.Request[turnstilev1.UpdateKeyRequest]) (*connect.Response[turnstilev1.Key], error) {
-	if _, err := h.requireAdmin(ctx, req.Header()); err != nil {
-		return nil, err
-	}
 	r := req.Msg
 	if r.Id == "" {
 		return nil, invalidArg("id is required")
+	}
+	if _, err := h.requireManage(ctx, req.Header(), "turnstile:update-key", r.Id); err != nil {
+		return nil, err
 	}
 	if r.ClearExpiry && r.ExpiresAt != nil {
 		return nil, invalidArg("expires_at and clear_expiry are mutually exclusive")
@@ -178,13 +178,36 @@ func (h *Handler) UpdateKey(ctx context.Context, req *connect.Request[turnstilev
 	return connect.NewResponse(keyToPB(updated)), nil
 }
 
-// DeleteKey removes a key and drops its cached rate limiters.
-func (h *Handler) DeleteKey(ctx context.Context, req *connect.Request[turnstilev1.DeleteKeyRequest]) (*connect.Response[emptypb.Empty], error) {
-	if _, err := h.requireAdmin(ctx, req.Header()); err != nil {
-		return nil, err
-	}
+// RotateKey regenerates a key's secret in place: same id, policy, rate limits,
+// and name. The new plaintext token is returned exactly once; the old token
+// stops authenticating immediately.
+func (h *Handler) RotateKey(ctx context.Context, req *connect.Request[turnstilev1.RotateKeyRequest]) (*connect.Response[turnstilev1.Key], error) {
 	if req.Msg.Id == "" {
 		return nil, invalidArg("id is required")
+	}
+	if _, err := h.requireManage(ctx, req.Header(), "turnstile:rotate-key", req.Msg.Id); err != nil {
+		return nil, err
+	}
+	plaintext, hash, err := token.Generate(token.APIKeyPrefix)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	updated, err := h.store.RotateAPIKey(ctx, req.Msg.Id, hash)
+	if err != nil {
+		return nil, storeErr(err)
+	}
+	pbKey := keyToPB(updated)
+	pbKey.PlaintextToken = plaintext
+	return connect.NewResponse(pbKey), nil
+}
+
+// DeleteKey removes a key and drops its cached rate limiters.
+func (h *Handler) DeleteKey(ctx context.Context, req *connect.Request[turnstilev1.DeleteKeyRequest]) (*connect.Response[emptypb.Empty], error) {
+	if req.Msg.Id == "" {
+		return nil, invalidArg("id is required")
+	}
+	if _, err := h.requireManage(ctx, req.Header(), "turnstile:delete-key", req.Msg.Id); err != nil {
+		return nil, err
 	}
 	if err := h.store.DeleteAPIKey(ctx, req.Msg.Id); err != nil {
 		return nil, storeErr(err)
@@ -195,7 +218,7 @@ func (h *Handler) DeleteKey(ctx context.Context, req *connect.Request[turnstilev
 
 // GetPolicy returns the global policy.
 func (h *Handler) GetPolicy(ctx context.Context, req *connect.Request[turnstilev1.GetPolicyRequest]) (*connect.Response[turnstilev1.Policy], error) {
-	if _, err := h.requireAdmin(ctx, req.Header()); err != nil {
+	if _, err := h.requireManage(ctx, req.Header(), "turnstile:read-policy", "*"); err != nil {
 		return nil, err
 	}
 	gp, err := h.store.GetGlobalPolicy(ctx)
@@ -209,7 +232,7 @@ func (h *Handler) GetPolicy(ctx context.Context, req *connect.Request[turnstilev
 // global policy is a deny-only ceiling, so allow statements are rejected. On
 // success it refreshes the in-memory policy cache and the rate limiter.
 func (h *Handler) UpdatePolicy(ctx context.Context, req *connect.Request[turnstilev1.UpdatePolicyRequest]) (*connect.Response[turnstilev1.Policy], error) {
-	ac, err := h.requireAdmin(ctx, req.Header())
+	callerKey, err := h.requireManage(ctx, req.Header(), "turnstile:update-policy", "*")
 	if err != nil {
 		return nil, err
 	}
@@ -227,7 +250,7 @@ func (h *Handler) UpdatePolicy(ctx context.Context, req *connect.Request[turnsti
 		Statements:  statements,
 		Constraints: store.Constraints{RateLimits: limits},
 		UpdatedAt:   h.now(),
-		UpdatedBy:   ac.Name,
+		UpdatedBy:   callerKey.Name,
 	}
 	if err := h.store.UpdateGlobalPolicy(ctx, gp, int(r.ExpectedVersion)); err != nil {
 		return nil, storeErr(err)
@@ -243,7 +266,7 @@ func (h *Handler) UpdatePolicy(ctx context.Context, req *connect.Request[turnsti
 
 // QueryAudit returns audit entries matching the filter, newest first.
 func (h *Handler) QueryAudit(ctx context.Context, req *connect.Request[turnstilev1.QueryAuditRequest]) (*connect.Response[turnstilev1.QueryAuditResponse], error) {
-	if _, err := h.requireAdmin(ctx, req.Header()); err != nil {
+	if _, err := h.requireManage(ctx, req.Header(), "turnstile:query-audit", "*"); err != nil {
 		return nil, err
 	}
 	r := req.Msg

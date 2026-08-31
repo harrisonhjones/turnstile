@@ -1,7 +1,7 @@
 // Thin client over the turnstile.v1 Connect service using the Connect HTTP/JSON
 // protocol: every unary RPC is a POST to /turnstile.v1.Turnstile/<Method> with a
-// JSON body (proto3 JSON) and an Authorization: Bearer <adminToken> header. No
-// generated client or RPC library — just fetch. The admin token is held in
+// JSON body (proto3 JSON) and an Authorization: Bearer <token> header. No
+// generated client or RPC library — just fetch. The management key is held in
 // memory and mirrored to localStorage, so the UI is a plain API client.
 import type {
   CreateKeyRequest,
@@ -14,7 +14,7 @@ import type {
   UpdatePolicyRequest,
 } from "./types";
 
-const TOKEN_KEY = "turnstile_admin_token";
+const TOKEN_KEY = "turnstile_management_key";
 
 export const Auth = {
   token: null as string | null,
@@ -52,8 +52,8 @@ export class APIError extends Error {
 }
 
 // connectRPC invokes one unary RPC and returns its response message. It always
-// sends the admin bearer token; management RPCs require it, and the hot-path
-// RPCs ignore it (this UI only calls management RPCs).
+// sends the management key as a bearer token; this UI only calls management RPCs,
+// each of which authorizes the key against a turnstile: action.
 export async function connectRPC<Req, Resp>(method: string, body: Req): Promise<Resp> {
   const resp = await fetch(SERVICE + "/" + method, {
     method: "POST",
@@ -93,6 +93,8 @@ export const API = {
   getKey: (id: string) => connectRPC<{ id: string }, Key>("GetKey", { id }),
 
   updateKey: (req: UpdateKeyRequest) => connectRPC<UpdateKeyRequest, Key>("UpdateKey", req),
+
+  rotateKey: (id: string) => connectRPC<{ id: string }, Key>("RotateKey", { id }),
 
   deleteKey: (id: string) => connectRPC<{ id: string }, Record<string, never>>("DeleteKey", { id }),
 

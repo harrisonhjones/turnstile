@@ -13,8 +13,9 @@ import {
 } from "@ionic/react";
 import { useAuth } from "../auth";
 
-// Login accepts an admin credential (the tsa_… bootstrap token, printed once on
-// first server start) and validates it against a management RPC.
+// Login accepts a management key (a tsk_… token whose policy allows turnstile:*
+// actions — e.g. the bootstrap key printed once on first server start) and
+// validates it against a management RPC.
 export default function Login() {
   const { signIn } = useAuth();
   const [token, setToken] = useState("");
@@ -39,14 +40,14 @@ export default function Login() {
         <IonCard className="login-card">
           <IonCardHeader>
             <IonCardTitle>Turnstile</IonCardTitle>
-            <IonNote>Sign in with an admin credential to manage keys, policy, and audit.</IonNote>
+            <IonNote>Sign in with a management key to manage keys, policy, and audit.</IonNote>
           </IonCardHeader>
           <IonCardContent>
             <IonInput
-              label="Admin credential"
+              label="Management key"
               labelPlacement="stacked"
               type="password"
-              placeholder="tsa_…"
+              placeholder="tsk_…"
               value={token}
               onIonInput={(e) => setToken(e.detail.value ?? "")}
               onKeyDown={(e) => e.key === "Enter" && submit()}
@@ -65,8 +66,8 @@ export default function Login() {
               {busy ? "Signing in…" : "Sign in"}
             </IonButton>
             <IonNote className="muted">
-              The bootstrap credential is logged once on first start. Delete all admin credentials
-              and restart to re-seed one.
+              The bootstrap key's token is logged once on first start. Locked out? Restart with
+              -bootstrap (or TURNSTILE_BOOTSTRAP=true) to mint a fresh full-admin key.
             </IonNote>
           </IonCardContent>
         </IonCard>

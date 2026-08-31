@@ -4,22 +4,23 @@
 //
 // # Guarding the guard
 //
-// Two credentials gate access, enforced per-RPC rather than by a blanket
-// interceptor so each method's requirement reads locally:
+// There is one credential type — an API key — and one authorization model:
 //
-//   - Management RPCs (CreateKey, ListKeys, …, UpdatePolicy, QueryAudit) require
-//     an admin credential in the Authorization: Bearer metadata.
-//   - The host-facing RPCs (Check, Authenticate, ReportAudit) optionally require
-//     a shared service credential (SERVICE_CREDENTIAL); when it is unset they
-//     are open, on the assumption that mTLS or network isolation guards them.
+//   - Management RPCs (CreateKey, ListKeys, …, RotateKey, UpdatePolicy,
+//     QueryAudit) require the caller's key to allow the matching turnstile:<op>
+//     action on the target resource (see requireManage). Management is evaluated
+//     against the caller key's own statements only — the global deny-only ceiling
+//     does not gate it.
+//   - The host-facing RPCs (Check, Authenticate, ReportAudit) are open at the
+//     application layer; deployments guard them with mTLS or network isolation.
 //
-// Authorization of the end user's request keys off the namespaced action and
-// the presented client token, never the calling host's identity.
+// Authorization of the end user's request (the Check hot path) keys off the
+// namespaced action and the presented client token, never the calling host's
+// identity.
 package server
 
 import (
 	"context"
-	"crypto/subtle"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -51,38 +52,35 @@ var maxReportAuditEntries = 10000
 
 // Deps are the collaborators a Handler needs.
 type Deps struct {
-	Store             *store.Store
-	Authenticator     *token.Authenticator
-	Authorizer        *token.Authorizer
-	PolicyCache       *token.PolicyCache
-	RateLimiter       *ratelimit.Manager
-	AuditWriter       *audit.Writer
-	ServiceCredential string // required on Check/Authenticate/ReportAudit if non-empty
+	Store         *store.Store
+	Authenticator *token.Authenticator
+	Authorizer    *token.Authorizer
+	PolicyCache   *token.PolicyCache
+	RateLimiter   *ratelimit.Manager
+	AuditWriter   *audit.Writer
 }
 
 // Handler implements turnstilev1connect.TurnstileHandler.
 type Handler struct {
-	store             *store.Store
-	auth              *token.Authenticator
-	authorizer        *token.Authorizer
-	policyCache       *token.PolicyCache
-	rateLimiter       *ratelimit.Manager
-	auditWriter       *audit.Writer
-	serviceCredential string
-	now               func() time.Time
+	store       *store.Store
+	auth        *token.Authenticator
+	authorizer  *token.Authorizer
+	policyCache *token.PolicyCache
+	rateLimiter *ratelimit.Manager
+	auditWriter *audit.Writer
+	now         func() time.Time
 }
 
 // New builds a Handler from its dependencies.
 func New(d Deps) *Handler {
 	return &Handler{
-		store:             d.Store,
-		auth:              d.Authenticator,
-		authorizer:        d.Authorizer,
-		policyCache:       d.PolicyCache,
-		rateLimiter:       d.RateLimiter,
-		auditWriter:       d.AuditWriter,
-		serviceCredential: d.ServiceCredential,
-		now:               time.Now,
+		store:       d.Store,
+		auth:        d.Authenticator,
+		authorizer:  d.Authorizer,
+		policyCache: d.PolicyCache,
+		rateLimiter: d.RateLimiter,
+		auditWriter: d.AuditWriter,
+		now:         time.Now,
 	}
 }
 
@@ -96,34 +94,28 @@ var _ turnstilev1connect.TurnstileHandler = (*Handler)(nil)
 
 // ---- auth helpers ----
 
-// requireService enforces the shared service credential on host-facing RPCs. It
-// is a no-op when no service credential is configured (mTLS/network isolation
-// is assumed to guard the endpoint instead).
-func (h *Handler) requireService(hdr http.Header) error {
-	if h.serviceCredential == "" {
-		return nil
-	}
-	presented := token.ExtractBearer(hdr.Get("Authorization"))
-	if subtle.ConstantTimeCompare([]byte(presented), []byte(h.serviceCredential)) != 1 {
-		return connect.NewError(connect.CodeUnauthenticated, errors.New("a valid service credential is required"))
-	}
-	return nil
-}
-
-// requireAdmin validates the admin credential in the request metadata and
-// returns the matched credential. Missing/invalid both map to Unauthenticated
-// with a generic message.
-func (h *Handler) requireAdmin(ctx context.Context, hdr http.Header) (*store.AdminCredential, error) {
-	cred := token.ExtractBearer(hdr.Get("Authorization"))
-	ac, err := h.auth.AuthenticateAdmin(ctx, cred)
+// requireManage authenticates the caller's API key and authorizes a management
+// action (turnstile:<op>) against the target resource, evaluating the key's own
+// statements only — the global deny-only ceiling does NOT gate management (see
+// Authorizer.AuthorizeManagement), so a broad global deny can't lock operators
+// out. It returns the caller key on success.
+//
+// A missing/invalid/disabled/expired key collapses to a generic Unauthenticated
+// (no enumeration signal); a well-authenticated key that simply lacks the grant
+// is PermissionDenied.
+func (h *Handler) requireManage(ctx context.Context, hdr http.Header, action string, resources ...string) (*store.APIKey, error) {
+	principal, err := h.auth.Authenticate(ctx, token.ExtractBearer(hdr.Get("Authorization")))
 	if err != nil {
-		if errors.Is(err, token.ErrMissingAdmin) || errors.Is(err, token.ErrInvalidAdmin) {
-			return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("a valid admin credential is required"))
+		if isAuthnFailure(err) {
+			return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("a valid management key is required"))
 		}
-		slog.Error("admin auth lookup failed", "error", err)
-		return nil, connect.NewError(connect.CodeInternal, errors.New("could not validate admin credential"))
+		slog.Error("management auth lookup failed", "error", err)
+		return nil, connect.NewError(connect.CodeInternal, errors.New("could not validate credential"))
 	}
-	return ac, nil
+	if !h.authorizer.AuthorizeManagement(principal.Key, action, resources...).Allowed {
+		return nil, connect.NewError(connect.CodePermissionDenied, fmt.Errorf("key is not permitted to %s", action))
+	}
+	return principal.Key, nil
 }
 
 // ---- hot path ----
@@ -132,9 +124,6 @@ func (h *Handler) requireAdmin(ctx context.Context, hdr http.Header) (*store.Adm
 // audit. Rate-limit budget is consumed only when authn and authz both pass and
 // count_rate_limit is set, so a denied authz never burns budget.
 func (h *Handler) Check(ctx context.Context, req *connect.Request[turnstilev1.CheckRequest]) (*connect.Response[turnstilev1.CheckResponse], error) {
-	if err := h.requireService(req.Header()); err != nil {
-		return nil, err
-	}
 	r := req.Msg
 
 	principal, err := h.auth.Authenticate(ctx, r.ClientToken)
@@ -193,9 +182,6 @@ func (h *Handler) Check(ctx context.Context, req *connect.Request[turnstilev1.Ch
 
 // Authenticate resolves a client token to its Principal (identity only).
 func (h *Handler) Authenticate(ctx context.Context, req *connect.Request[turnstilev1.AuthenticateRequest]) (*connect.Response[turnstilev1.Principal], error) {
-	if err := h.requireService(req.Header()); err != nil {
-		return nil, err
-	}
 	principal, err := h.auth.Authenticate(ctx, req.Msg.ClientToken)
 	if err != nil {
 		if isAuthnFailure(err) {
@@ -212,9 +198,6 @@ func (h *Handler) Authenticate(ctx context.Context, req *connect.Request[turnsti
 // background. It returns the count accepted. Unary (not client-streaming) so
 // hosts can call it as plain JSON: one POST with a JSON array of entries.
 func (h *Handler) ReportAudit(ctx context.Context, req *connect.Request[turnstilev1.ReportAuditRequest]) (*connect.Response[turnstilev1.ReportAuditSummary], error) {
-	if err := h.requireService(req.Header()); err != nil {
-		return nil, err
-	}
 	entries := req.Msg.Entries
 	if len(entries) > maxReportAuditEntries {
 		return nil, connect.NewError(connect.CodeResourceExhausted,

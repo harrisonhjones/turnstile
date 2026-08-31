@@ -1,8 +1,9 @@
-// Auth context: holds the admin sign-in state and exposes sign-in/out. The admin
-// credential itself lives in the api module's Auth store (localStorage-mirrored);
-// this layer tracks whether we are signed in and drives the login gate. There is
-// no dedicated "verify credential" RPC, so a paste is validated lazily by the
-// first management call (GetPolicy) during sign-in.
+// Auth context: holds the sign-in state and exposes sign-in/out. The management
+// key itself lives in the api module's Auth store (localStorage-mirrored); this
+// layer tracks whether we are signed in and drives the login gate. There is no
+// dedicated "verify credential" RPC, so a pasted key is validated lazily by the
+// first management call (GetPolicy) during sign-in — which also confirms the key
+// actually has management access.
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { API, APIError, Auth } from "./api";
 
@@ -29,12 +30,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signIn = async (token: string) => {
     Auth.set(token);
     try {
-      await API.getPolicy(); // validate the credential against a management RPC
+      await API.getPolicy(); // validate the key against a management RPC
       setSignedIn(true);
     } catch (e) {
       Auth.clear();
-      if (e instanceof APIError && e.status === 401) {
-        throw new Error("That admin credential is not valid.");
+      if (e instanceof APIError && (e.status === 401 || e.status === 403)) {
+        throw new Error("That key is not valid, or it lacks management access.");
       }
       throw e;
     }

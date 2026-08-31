@@ -170,19 +170,24 @@ func TestBootstrapIfEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("bootstrap: %v", err)
 	}
-	if !strings.HasPrefix(tok, AdminPrefix) {
-		t.Errorf("bootstrap should return an admin token, got %q", tok)
+	if !strings.HasPrefix(tok, APIKeyPrefix) {
+		t.Errorf("bootstrap should return an API key token, got %q", tok)
 	}
-	// The credential is authenticable.
+	// The bootstrap key authenticates and carries full management access.
 	a := NewAuthenticator(s)
-	if _, err := a.AuthenticateAdmin(ctx, tok); err != nil {
-		t.Errorf("bootstrap admin token should authenticate: %v", err)
+	principal, err := a.Authenticate(ctx, tok)
+	if err != nil {
+		t.Fatalf("bootstrap token should authenticate: %v", err)
+	}
+	az := NewAuthorizer(NewPolicyCache(nil))
+	if !az.AuthorizeManagement(principal.Key, "turnstile:create-key", "*").Allowed {
+		t.Error("bootstrap key should allow turnstile:create-key")
 	}
 	// A default global policy was seeded.
 	if _, err := s.GetGlobalPolicy(ctx); err != nil {
 		t.Errorf("expected a seeded global policy: %v", err)
 	}
-	// Idempotent: a second call with an existing admin returns no new token.
+	// Idempotent: a second call with keys already present returns no new token.
 	tok2, err := BootstrapIfEmpty(ctx, s, now)
 	if err != nil {
 		t.Fatalf("second bootstrap: %v", err)
@@ -190,8 +195,8 @@ func TestBootstrapIfEmpty(t *testing.T) {
 	if tok2 != "" {
 		t.Errorf("second bootstrap should not re-seed, got token %q", tok2)
 	}
-	// No API keys are auto-seeded (unlike a host's own bootstrap key).
-	if n, _ := s.CountAPIKeys(ctx); n != 0 {
-		t.Errorf("bootstrap must not create API keys, got %d", n)
+	// Exactly one key was seeded (the full-admin bootstrap key).
+	if n, _ := s.CountAPIKeys(ctx); n != 1 {
+		t.Errorf("bootstrap should seed exactly one key, got %d", n)
 	}
 }

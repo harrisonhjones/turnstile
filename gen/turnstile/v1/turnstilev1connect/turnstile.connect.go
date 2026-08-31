@@ -48,6 +48,8 @@ const (
 	TurnstileGetKeyProcedure = "/turnstile.v1.Turnstile/GetKey"
 	// TurnstileUpdateKeyProcedure is the fully-qualified name of the Turnstile's UpdateKey RPC.
 	TurnstileUpdateKeyProcedure = "/turnstile.v1.Turnstile/UpdateKey"
+	// TurnstileRotateKeyProcedure is the fully-qualified name of the Turnstile's RotateKey RPC.
+	TurnstileRotateKeyProcedure = "/turnstile.v1.Turnstile/RotateKey"
 	// TurnstileDeleteKeyProcedure is the fully-qualified name of the Turnstile's DeleteKey RPC.
 	TurnstileDeleteKeyProcedure = "/turnstile.v1.Turnstile/DeleteKey"
 	// TurnstileGetPolicyProcedure is the fully-qualified name of the Turnstile's GetPolicy RPC.
@@ -71,11 +73,17 @@ type TurnstileClient interface {
 	// (not client-streaming) so hosts can call it as plain JSON over HTTP: one
 	// POST with a JSON array of entries, no streaming client needed.
 	ReportAudit(context.Context, *connect.Request[v1.ReportAuditRequest]) (*connect.Response[v1.ReportAuditSummary], error)
-	// Management RPCs. All require an admin credential (see the service docs).
+	// Management RPCs. Each requires the caller to present a key whose policy
+	// allows the matching turnstile:<op> action (e.g. turnstile:create-key) on the
+	// target resource. There is no separate "admin credential" — management is just
+	// another action evaluated by the policy engine.
 	CreateKey(context.Context, *connect.Request[v1.CreateKeyRequest]) (*connect.Response[v1.Key], error)
 	ListKeys(context.Context, *connect.Request[v1.ListKeysRequest]) (*connect.Response[v1.ListKeysResponse], error)
 	GetKey(context.Context, *connect.Request[v1.GetKeyRequest]) (*connect.Response[v1.Key], error)
 	UpdateKey(context.Context, *connect.Request[v1.UpdateKeyRequest]) (*connect.Response[v1.Key], error)
+	// RotateKey regenerates a key's secret in place: same id, policy, rate limits,
+	// and name; a new token is returned once and the old one stops working.
+	RotateKey(context.Context, *connect.Request[v1.RotateKeyRequest]) (*connect.Response[v1.Key], error)
 	DeleteKey(context.Context, *connect.Request[v1.DeleteKeyRequest]) (*connect.Response[emptypb.Empty], error)
 	GetPolicy(context.Context, *connect.Request[v1.GetPolicyRequest]) (*connect.Response[v1.Policy], error)
 	UpdatePolicy(context.Context, *connect.Request[v1.UpdatePolicyRequest]) (*connect.Response[v1.Policy], error)
@@ -135,6 +143,12 @@ func NewTurnstileClient(httpClient connect.HTTPClient, baseURL string, opts ...c
 			connect.WithSchema(turnstileMethods.ByName("UpdateKey")),
 			connect.WithClientOptions(opts...),
 		),
+		rotateKey: connect.NewClient[v1.RotateKeyRequest, v1.Key](
+			httpClient,
+			baseURL+TurnstileRotateKeyProcedure,
+			connect.WithSchema(turnstileMethods.ByName("RotateKey")),
+			connect.WithClientOptions(opts...),
+		),
 		deleteKey: connect.NewClient[v1.DeleteKeyRequest, emptypb.Empty](
 			httpClient,
 			baseURL+TurnstileDeleteKeyProcedure,
@@ -171,6 +185,7 @@ type turnstileClient struct {
 	listKeys     *connect.Client[v1.ListKeysRequest, v1.ListKeysResponse]
 	getKey       *connect.Client[v1.GetKeyRequest, v1.Key]
 	updateKey    *connect.Client[v1.UpdateKeyRequest, v1.Key]
+	rotateKey    *connect.Client[v1.RotateKeyRequest, v1.Key]
 	deleteKey    *connect.Client[v1.DeleteKeyRequest, emptypb.Empty]
 	getPolicy    *connect.Client[v1.GetPolicyRequest, v1.Policy]
 	updatePolicy *connect.Client[v1.UpdatePolicyRequest, v1.Policy]
@@ -212,6 +227,11 @@ func (c *turnstileClient) UpdateKey(ctx context.Context, req *connect.Request[v1
 	return c.updateKey.CallUnary(ctx, req)
 }
 
+// RotateKey calls turnstile.v1.Turnstile.RotateKey.
+func (c *turnstileClient) RotateKey(ctx context.Context, req *connect.Request[v1.RotateKeyRequest]) (*connect.Response[v1.Key], error) {
+	return c.rotateKey.CallUnary(ctx, req)
+}
+
 // DeleteKey calls turnstile.v1.Turnstile.DeleteKey.
 func (c *turnstileClient) DeleteKey(ctx context.Context, req *connect.Request[v1.DeleteKeyRequest]) (*connect.Response[emptypb.Empty], error) {
 	return c.deleteKey.CallUnary(ctx, req)
@@ -245,11 +265,17 @@ type TurnstileHandler interface {
 	// (not client-streaming) so hosts can call it as plain JSON over HTTP: one
 	// POST with a JSON array of entries, no streaming client needed.
 	ReportAudit(context.Context, *connect.Request[v1.ReportAuditRequest]) (*connect.Response[v1.ReportAuditSummary], error)
-	// Management RPCs. All require an admin credential (see the service docs).
+	// Management RPCs. Each requires the caller to present a key whose policy
+	// allows the matching turnstile:<op> action (e.g. turnstile:create-key) on the
+	// target resource. There is no separate "admin credential" — management is just
+	// another action evaluated by the policy engine.
 	CreateKey(context.Context, *connect.Request[v1.CreateKeyRequest]) (*connect.Response[v1.Key], error)
 	ListKeys(context.Context, *connect.Request[v1.ListKeysRequest]) (*connect.Response[v1.ListKeysResponse], error)
 	GetKey(context.Context, *connect.Request[v1.GetKeyRequest]) (*connect.Response[v1.Key], error)
 	UpdateKey(context.Context, *connect.Request[v1.UpdateKeyRequest]) (*connect.Response[v1.Key], error)
+	// RotateKey regenerates a key's secret in place: same id, policy, rate limits,
+	// and name; a new token is returned once and the old one stops working.
+	RotateKey(context.Context, *connect.Request[v1.RotateKeyRequest]) (*connect.Response[v1.Key], error)
 	DeleteKey(context.Context, *connect.Request[v1.DeleteKeyRequest]) (*connect.Response[emptypb.Empty], error)
 	GetPolicy(context.Context, *connect.Request[v1.GetPolicyRequest]) (*connect.Response[v1.Policy], error)
 	UpdatePolicy(context.Context, *connect.Request[v1.UpdatePolicyRequest]) (*connect.Response[v1.Policy], error)
@@ -305,6 +331,12 @@ func NewTurnstileHandler(svc TurnstileHandler, opts ...connect.HandlerOption) (s
 		connect.WithSchema(turnstileMethods.ByName("UpdateKey")),
 		connect.WithHandlerOptions(opts...),
 	)
+	turnstileRotateKeyHandler := connect.NewUnaryHandler(
+		TurnstileRotateKeyProcedure,
+		svc.RotateKey,
+		connect.WithSchema(turnstileMethods.ByName("RotateKey")),
+		connect.WithHandlerOptions(opts...),
+	)
 	turnstileDeleteKeyHandler := connect.NewUnaryHandler(
 		TurnstileDeleteKeyProcedure,
 		svc.DeleteKey,
@@ -345,6 +377,8 @@ func NewTurnstileHandler(svc TurnstileHandler, opts ...connect.HandlerOption) (s
 			turnstileGetKeyHandler.ServeHTTP(w, r)
 		case TurnstileUpdateKeyProcedure:
 			turnstileUpdateKeyHandler.ServeHTTP(w, r)
+		case TurnstileRotateKeyProcedure:
+			turnstileRotateKeyHandler.ServeHTTP(w, r)
 		case TurnstileDeleteKeyProcedure:
 			turnstileDeleteKeyHandler.ServeHTTP(w, r)
 		case TurnstileGetPolicyProcedure:
@@ -388,6 +422,10 @@ func (UnimplementedTurnstileHandler) GetKey(context.Context, *connect.Request[v1
 
 func (UnimplementedTurnstileHandler) UpdateKey(context.Context, *connect.Request[v1.UpdateKeyRequest]) (*connect.Response[v1.Key], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("turnstile.v1.Turnstile.UpdateKey is not implemented"))
+}
+
+func (UnimplementedTurnstileHandler) RotateKey(context.Context, *connect.Request[v1.RotateKeyRequest]) (*connect.Response[v1.Key], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("turnstile.v1.Turnstile.RotateKey is not implemented"))
 }
 
 func (UnimplementedTurnstileHandler) DeleteKey(context.Context, *connect.Request[v1.DeleteKeyRequest]) (*connect.Response[emptypb.Empty], error) {

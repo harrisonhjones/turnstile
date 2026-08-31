@@ -79,11 +79,11 @@ mutual TLS add `--no-healthcheck` (the built-in probe presents no client cert).
 You can also build the image locally: `docker build -t turnstile .`. Full env-var
 table and deployment notes: [DOCKERHUB.md](DOCKERHUB.md).
 
-On first start against an empty database, Turnstile prints a **bootstrap admin
-token once** — save it; it guards the management API and web console:
+On first start against an empty database, Turnstile prints a **bootstrap
+management key once** — save it; it guards the management API and web console:
 
 ```json
-{"time":"2026-08-25T12:00:00Z","level":"WARN","msg":"created bootstrap admin credential — store this token now, it will not be shown again","admin_token":"tsa_..."}
+{"time":"2026-08-25T12:00:00Z","level":"WARN","msg":"created bootstrap management key — store this token now, it will not be shown again","token":"tsk_..."}
 ```
 
 Then open the console at **http://localhost:8080/ui/** and sign in with that
@@ -104,7 +104,7 @@ copy `.env.example` to `.env` to customize. See
   Go examples).
 - **[ADMINISTRATION.md](ADMINISTRATION.md)** — for operators: running the
   service, minting/managing keys, editing policy, auditing, and securing
-  host→Turnstile (service credential or mTLS).
+  host→Turnstile (mTLS or network isolation).
 
 Low-level details live in Godoc — read the package docs with `go doc ./internal/...`
 (there's no mage target for it).

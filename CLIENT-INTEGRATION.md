@@ -42,25 +42,27 @@ account-scoped grant (`photos:account:acct_*`) covers every album within it.
   received and passes to `Check`/`Authenticate`. An operator mints it with
   `CreateKey` (see [ADMINISTRATION.md](ADMINISTRATION.md#managing-keys)); it
   carries the policy and rate limits Turnstile evaluates.
-- **Admin credential** (`tsa_…`) — guards the management RPCs; used by operators
-  and the web console, **not** by a host on the hot path.
+
+There is only one credential type: an API key (`tsk_…`). A *management* key is
+just such a key whose own policy grants `turnstile:` actions; it's used by
+operators and the web console, **not** by a host on the hot path (see
+[ADMINISTRATION.md](ADMINISTRATION.md#management-access-and-scoped-roles)).
 
 Authorization keys off the namespaced action and the client token — never your
 host's identity.
 
 ## Authenticating the host
 
-Separately from the end user's `client_token`, your host may need to authenticate
-*itself* to Turnstile so only trusted hosts can reach the service-facing RPCs.
-Depending on how the operator configured the service
+The service-facing RPCs (`Check`/`Authenticate`/`ReportAudit`) are **open at the
+application layer** — there is no per-host credential to send. Access is
+controlled at the transport/network layer, so depending on how the operator
+configured the service
 ([ADMINISTRATION.md](ADMINISTRATION.md#securing-host--turnstile)):
 
-- **Service credential** — send the shared secret as an `Authorization: Bearer`
-  header on `Check`/`Authenticate`/`ReportAudit`.
 - **mTLS** — present your client certificate on the connection (configure your
   HTTP client's TLS with the cert/key the operator issued you).
-- **Neither** — nothing extra to send; the endpoint is guarded by network
-  isolation.
+- **Network isolation only** — nothing extra to send; reachability is restricted
+  by network controls (e.g. a private subnet).
 
 ## The hot path with curl
 
@@ -76,7 +78,7 @@ curl -sS http://localhost:8080/turnstile.v1.Turnstile/Check \
     "resources": ["photos:album:a1b2"],
     "countRateLimit": true
   }'
-# -> {"allowed":true,"principal":{"keyId":"key_...","name":"photos-reader"},"decision":"ALLOWED","rateLimit":{}}
+# -> {"allowed":true,"principal":{"keyId":"turnstile:key:...","name":"photos-reader"},"decision":"ALLOWED","rateLimit":{}}
 ```
 
 `decision` is one of `ALLOWED`, `UNAUTHENTICATED`, `POLICY_DENIED`,
@@ -137,7 +139,7 @@ curl -sS http://localhost:8080/turnstile.v1.Turnstile/ReportAudit \
   -d '{
     "entries": [
       {
-        "apiKeyId": "key_...",
+        "apiKeyId": "turnstile:key:...",
         "apiKeyName": "photos-reader",
         "method": "REST",
         "path": "/albums/a1b2",

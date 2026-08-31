@@ -36,14 +36,14 @@ func withAdmin(env *testEnv, req connect.AnyRequest) {
 }
 
 func newTestEnv(t *testing.T) *testEnv {
-	return newTestEnvOpts(t, "")
+	return newTestEnvOpts(t)
 }
 
-// newTestEnvOpts builds an env; a non-empty serviceCred requires that credential
-// on the host-facing RPCs (Check/Authenticate/ReportAudit). Optional wrap
-// functions decorate the Connect handler (e.g. the metrics Instrument
-// middleware) so tests can exercise the same wrapping main.go applies.
-func newTestEnvOpts(t *testing.T, serviceCred string, wrap ...func(http.Handler) http.Handler) *testEnv {
+// newTestEnvOpts builds an env. Optional wrap functions decorate the Connect
+// handler (e.g. the metrics Instrument middleware) so tests can exercise the same
+// wrapping main.go applies. The bootstrap token it returns is a full-admin key
+// (allow turnstile:* on *), so withAdmin authorizes any management RPC.
+func newTestEnvOpts(t *testing.T, wrap ...func(http.Handler) http.Handler) *testEnv {
 	t.Helper()
 	ctx := context.Background()
 
@@ -68,13 +68,12 @@ func newTestEnvOpts(t *testing.T, serviceCred string, wrap ...func(http.Handler)
 	t.Cleanup(writer.Wait)
 
 	h := New(Deps{
-		Store:             s,
-		Authenticator:     token.NewAuthenticator(s),
-		Authorizer:        token.NewAuthorizer(cache),
-		PolicyCache:       cache,
-		RateLimiter:       rl,
-		AuditWriter:       writer,
-		ServiceCredential: serviceCred,
+		Store:         s,
+		Authenticator: token.NewAuthenticator(s),
+		Authorizer:    token.NewAuthorizer(cache),
+		PolicyCache:   cache,
+		RateLimiter:   rl,
+		AuditWriter:   writer,
 	})
 
 	path, handler := h.NewConnectHandler()
@@ -232,7 +231,7 @@ func TestReportAuditCap(t *testing.T) {
 // confirms Check still works through the wrapper and that the request is counted.
 func TestCheckThroughMetricsInstrument(t *testing.T) {
 	m := metrics.Enable()
-	env := newTestEnvOpts(t, "", m.Instrument)
+	env := newTestEnvOpts(t, m.Instrument)
 	ctx := context.Background()
 
 	createReq := connect.NewRequest(&turnstilev1.CreateKeyRequest{
@@ -381,6 +380,141 @@ func mustCreateKey(t *testing.T, env *testEnv, req *turnstilev1.CreateKeyRequest
 	return resp.Msg
 }
 
+// withToken sets an explicit bearer token, for exercising management
+// authorization with keys other than the bootstrap admin.
+func withToken(req connect.AnyRequest, tok string) {
+	req.Header().Set("Authorization", "Bearer "+tok)
+}
+
+// TestManagementRequiresGrant: management needs a key that allows the turnstile:
+// action. No credential is Unauthenticated; an authenticated-but-ungranted key is
+// PermissionDenied.
+func TestManagementRequiresGrant(t *testing.T) {
+	env := newTestEnv(t)
+	ctx := context.Background()
+
+	// A key with only business grants — no turnstile: action.
+	plain := mustCreateKey(t, env, &turnstilev1.CreateKeyRequest{
+		Name: "plain", Statements: []*turnstilev1.Statement{{Effect: turnstilev1.Effect_ALLOW, Actions: []string{"svc:*"}, Resources: []string{"*"}}},
+	})
+
+	if _, err := env.client.ListKeys(ctx, connect.NewRequest(&turnstilev1.ListKeysRequest{})); connect.CodeOf(err) != connect.CodeUnauthenticated {
+		t.Errorf("ListKeys with no credential: got %v, want Unauthenticated", connect.CodeOf(err))
+	}
+	r := connect.NewRequest(&turnstilev1.ListKeysRequest{})
+	withToken(r, plain.PlaintextToken)
+	if _, err := env.client.ListKeys(ctx, r); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Errorf("ListKeys with an ungranted key: got %v, want PermissionDenied", connect.CodeOf(err))
+	}
+}
+
+// TestManagementScopedGrant: turnstile:update-key scoped to one key id allows
+// updating that key but not another.
+func TestManagementScopedGrant(t *testing.T) {
+	env := newTestEnv(t)
+	ctx := context.Background()
+
+	target := mustCreateKey(t, env, &turnstilev1.CreateKeyRequest{Name: "target", Statements: allowAll()})
+	other := mustCreateKey(t, env, &turnstilev1.CreateKeyRequest{Name: "other", Statements: allowAll()})
+	mgr := mustCreateKey(t, env, &turnstilev1.CreateKeyRequest{
+		Name:       "mgr",
+		Statements: []*turnstilev1.Statement{{Effect: turnstilev1.Effect_ALLOW, Actions: []string{"turnstile:update-key"}, Resources: []string{target.Id}}},
+	})
+
+	upd := func(id string) error {
+		note := "scoped-touch"
+		r := connect.NewRequest(&turnstilev1.UpdateKeyRequest{Id: id, Note: &note})
+		withToken(r, mgr.PlaintextToken)
+		_, err := env.client.UpdateKey(ctx, r)
+		return err
+	}
+	if err := upd(target.Id); err != nil {
+		t.Errorf("scoped manager should update its target: %v", err)
+	}
+	if err := upd(other.Id); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Errorf("scoped manager updating another key: got %v, want PermissionDenied", connect.CodeOf(err))
+	}
+}
+
+// TestManagementIgnoresGlobalCeiling: a global deny of turnstile:* must not lock
+// out a full-admin key — management is evaluated against the key alone.
+func TestManagementIgnoresGlobalCeiling(t *testing.T) {
+	env := newTestEnv(t)
+	ctx := context.Background()
+
+	getReq := connect.NewRequest(&turnstilev1.GetPolicyRequest{})
+	withAdmin(env, getReq)
+	pol, err := env.client.GetPolicy(ctx, getReq)
+	if err != nil {
+		t.Fatalf("GetPolicy: %v", err)
+	}
+	upReq := connect.NewRequest(&turnstilev1.UpdatePolicyRequest{
+		Statements:      []*turnstilev1.Statement{{Effect: turnstilev1.Effect_DENY, Actions: []string{"turnstile:*"}, Resources: []string{"*"}}},
+		RateLimits:      pol.Msg.RateLimits,
+		ExpectedVersion: pol.Msg.Version,
+	})
+	withAdmin(env, upReq)
+	if _, err := env.client.UpdatePolicy(ctx, upReq); err != nil {
+		t.Fatalf("UpdatePolicy adding a global turnstile:* deny: %v", err)
+	}
+
+	lr := connect.NewRequest(&turnstilev1.ListKeysRequest{})
+	withAdmin(env, lr)
+	if _, err := env.client.ListKeys(ctx, lr); err != nil {
+		t.Errorf("management must ignore the global ceiling; got: %v", err)
+	}
+}
+
+// TestRotateKeyOverWire: rotation invalidates the old token, issues a new one,
+// and preserves the id.
+func TestRotateKeyOverWire(t *testing.T) {
+	env := newTestEnv(t)
+	ctx := context.Background()
+
+	k := mustCreateKey(t, env, &turnstilev1.CreateKeyRequest{
+		Name: "rotate-me", Statements: []*turnstilev1.Statement{{Effect: turnstilev1.Effect_ALLOW, Actions: []string{"svc:read"}, Resources: []string{"*"}}},
+	})
+	oldTok := k.PlaintextToken
+	if _, err := env.client.Authenticate(ctx, connect.NewRequest(&turnstilev1.AuthenticateRequest{ClientToken: oldTok})); err != nil {
+		t.Fatalf("pre-rotate Authenticate: %v", err)
+	}
+
+	rr := connect.NewRequest(&turnstilev1.RotateKeyRequest{Id: k.Id})
+	withAdmin(env, rr)
+	rot, err := env.client.RotateKey(ctx, rr)
+	if err != nil {
+		t.Fatalf("RotateKey: %v", err)
+	}
+	if rot.Msg.PlaintextToken == "" || rot.Msg.PlaintextToken == oldTok {
+		t.Fatal("RotateKey should return a fresh plaintext token")
+	}
+	if rot.Msg.Id != k.Id {
+		t.Errorf("id changed on rotate: %q vs %q", rot.Msg.Id, k.Id)
+	}
+	if _, err := env.client.Authenticate(ctx, connect.NewRequest(&turnstilev1.AuthenticateRequest{ClientToken: oldTok})); connect.CodeOf(err) != connect.CodeUnauthenticated {
+		t.Errorf("old token after rotate: got %v, want Unauthenticated", connect.CodeOf(err))
+	}
+	if _, err := env.client.Authenticate(ctx, connect.NewRequest(&turnstilev1.AuthenticateRequest{ClientToken: rot.Msg.PlaintextToken})); err != nil {
+		t.Errorf("new token should authenticate: %v", err)
+	}
+}
+
+// TestHostRPCsOpen: host-facing RPCs need no credential (SERVICE_CREDENTIAL is
+// gone) — Check with no auth header returns a decision rather than erroring.
+func TestHostRPCsOpen(t *testing.T) {
+	env := newTestEnv(t)
+	ctx := context.Background()
+	resp, err := env.client.Check(ctx, connect.NewRequest(&turnstilev1.CheckRequest{
+		ClientToken: "tsk_bogus", Action: "svc:read", Resources: []string{"svc:x"},
+	}))
+	if err != nil {
+		t.Fatalf("Check without a credential should not error: %v", err)
+	}
+	if resp.Msg.Decision != turnstilev1.Decision_UNAUTHENTICATED {
+		t.Errorf("bogus token: got %v, want UNAUTHENTICATED", resp.Msg.Decision)
+	}
+}
+
 // TestGenericAuthFailureIndistinguishable is the core security invariant: an
 // unknown, a disabled, and an expired key must all yield exactly the same
 // UNAUTHENTICATED result over Check, and a generic Unauthenticated over
@@ -458,38 +592,6 @@ func TestCheckWritesNoAudit(t *testing.T) {
 	}
 	if len(entries) != 0 {
 		t.Errorf("Check must not write audit; found %d entries", len(entries))
-	}
-}
-
-// TestServiceCredentialGating verifies the optional host→Turnstile service
-// credential on the host-facing RPCs.
-func TestServiceCredentialGating(t *testing.T) {
-	env := newTestEnvOpts(t, "svc-secret")
-	ctx := context.Background()
-
-	base := &turnstilev1.CheckRequest{ClientToken: "tsk_whatever", Action: "svc:read", Resources: []string{"svc:x"}}
-
-	// Missing credential → Unauthenticated (rejected before token evaluation).
-	if _, err := env.client.Check(ctx, connect.NewRequest(base)); connect.CodeOf(err) != connect.CodeUnauthenticated {
-		t.Errorf("missing service credential: code = %v, want Unauthenticated", connect.CodeOf(err))
-	}
-	// Wrong credential → Unauthenticated.
-	wrong := connect.NewRequest(base)
-	wrong.Header().Set("Authorization", "Bearer nope")
-	if _, err := env.client.Check(ctx, wrong); connect.CodeOf(err) != connect.CodeUnauthenticated {
-		t.Errorf("wrong service credential: code = %v, want Unauthenticated", connect.CodeOf(err))
-	}
-	// Correct credential passes the gate: we reach token evaluation, which for a
-	// bogus client token yields an UNAUTHENTICATED *response* (not a transport
-	// error) — proving the gate was cleared.
-	ok := connect.NewRequest(base)
-	ok.Header().Set("Authorization", "Bearer svc-secret")
-	resp, err := env.client.Check(ctx, ok)
-	if err != nil {
-		t.Fatalf("correct service credential should clear the gate, got error: %v", err)
-	}
-	if resp.Msg.Decision != turnstilev1.Decision_UNAUTHENTICATED {
-		t.Errorf("expected UNAUTHENTICATED decision for bogus token past the gate, got %v", resp.Msg.Decision)
 	}
 }
 

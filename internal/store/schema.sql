@@ -23,21 +23,12 @@ CREATE TABLE IF NOT EXISTS api_keys (
 -- No explicit index on key_hash: the UNIQUE constraint already creates one, and
 -- lookups are by key_hash, so a second index would only add write cost.
 
--- Admin credentials guard the management RPCs. Like API keys, only the SHA-256
--- hash of the credential is stored. First start against an empty DB seeds a
--- bootstrap credential and logs it once; deleting every row re-seeds on the
--- next start (the intentional lockout-recovery path — there is no guard against
--- deleting the last one).
-CREATE TABLE IF NOT EXISTS admin_credentials (
-    id           TEXT PRIMARY KEY,
-    name         TEXT NOT NULL UNIQUE,
-    cred_hash    TEXT NOT NULL UNIQUE,
-    note         TEXT NOT NULL DEFAULT '',
-    created_at   INTEGER NOT NULL,
-    last_used_at INTEGER
-);
--- As with api_keys.key_hash, the UNIQUE(cred_hash) constraint already provides
--- the lookup index; no separate index is needed.
+-- There is no separate admin-credentials table: the management API is guarded by
+-- the same api_keys and policy engine as everything else. A key manages
+-- Turnstile when its statements allow the relevant "turnstile:<op>" action. First
+-- start against an empty api_keys table seeds a full-admin bootstrap key and logs
+-- its token once; the -bootstrap flag / TURNSTILE_BOOTSTRAP env mints a fresh one
+-- for break-glass recovery.
 
 -- Global service policy. Single row enforced via the fixed id = 1. statements is
 -- a deny-only ceiling; constraints is a JSON document holding rate limits.

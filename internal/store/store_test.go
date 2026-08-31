@@ -186,26 +186,30 @@ func TestGlobalPolicyVersioning(t *testing.T) {
 	}
 }
 
-func TestAdminCredentials(t *testing.T) {
+func TestRotateAPIKey(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 
-	if n, _ := s.CountAdminCredentials(ctx); n != 0 {
-		t.Fatalf("expected 0 admin creds, got %d", n)
+	k := &APIKey{ID: "turnstile:key:abc", Name: "k", KeyHash: "h1", Statements: []policy.Statement{}, CreatedAt: time.Now()}
+	if err := s.CreateAPIKey(ctx, k); err != nil {
+		t.Fatalf("create: %v", err)
 	}
-	c := &AdminCredential{ID: "adm_1", Name: "bootstrap", CredHash: "ah1", CreatedAt: time.Now()}
-	if err := s.CreateAdminCredential(ctx, c); err != nil {
-		t.Fatalf("create admin: %v", err)
+	got, err := s.RotateAPIKey(ctx, k.ID, "h2")
+	if err != nil {
+		t.Fatalf("rotate: %v", err)
 	}
-	if n, _ := s.CountAdminCredentials(ctx); n != 1 {
-		t.Errorf("expected 1 admin cred, got %d", n)
+	if got.KeyHash != "h2" {
+		t.Errorf("hash not rotated: %q", got.KeyHash)
 	}
-	got, err := s.GetAdminCredentialByHash(ctx, "ah1")
-	if err != nil || got.Name != "bootstrap" {
-		t.Errorf("get admin by hash: %v (%+v)", err, got)
+	// Old hash no longer resolves; new one does.
+	if _, err := s.GetAPIKeyByHash(ctx, "h1"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("old hash should not resolve, got %v", err)
 	}
-	if _, err := s.GetAdminCredentialByHash(ctx, "nope"); !errors.Is(err, ErrNotFound) {
-		t.Errorf("expected ErrNotFound, got %v", err)
+	if _, err := s.GetAPIKeyByHash(ctx, "h2"); err != nil {
+		t.Errorf("new hash should resolve, got %v", err)
+	}
+	if _, err := s.RotateAPIKey(ctx, "turnstile:key:missing", "h3"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("expected ErrNotFound rotating a missing key, got %v", err)
 	}
 }
 
