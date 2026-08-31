@@ -1,6 +1,7 @@
 // Package server implements the turnstile.v1 Connect service: the Check hot
-// path, identity lookup, audit intake, and the admin-guarded management RPCs.
-// It wires together the token, policy, ratelimit, audit, and store packages.
+// path, identity lookup, and the management RPCs (guarded by the caller key's own
+// turnstile: grants). It wires together the token, policy, ratelimit, audit, and
+// store packages.
 //
 // # Guarding the guard
 //
@@ -122,8 +123,8 @@ func (h *Handler) requireManage(ctx context.Context, hdr http.Header, action str
 // writeManageAudit records a management-plane audit entry (best-effort; a full
 // queue during shutdown just drops it). Turnstile self-audits its own management
 // RPCs — successful mutations and denied (PermissionDenied) attempts — because it
-// is the authority for turnstile:* actions. This is distinct from the Check hot
-// path, whose audit is host-reported via ReportAudit.
+// is the authority for turnstile:* actions. The Check hot path records its own
+// audit row per decision (see recordCheckAudit).
 func (h *Handler) writeManageAudit(caller *store.APIKey, action, resource string, d turnstilev1.Decision) {
 	var id string
 	if caller != nil {

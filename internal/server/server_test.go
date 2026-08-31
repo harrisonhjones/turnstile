@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	turnstilev1 "harrisonhjones.com/turnstile/gen/turnstile/v1"
@@ -381,6 +382,49 @@ func TestManagementScopedGrant(t *testing.T) {
 	}
 }
 
+// TestUpdateKeyIsAdminEquivalent pins the documented reality (ADMINISTRATION.md
+// "Statement-editing grants are admin-equivalent"): a key with turnstile:update-key
+// scoped to a single target can rewrite that target's statements to full admin,
+// because management is evaluated key-only (no global ceiling to fence it).
+func TestUpdateKeyIsAdminEquivalent(t *testing.T) {
+	env := newTestEnv(t)
+	ctx := context.Background()
+
+	// target starts with NO management grants.
+	target := mustCreateKey(t, env, &turnstilev1.CreateKeyRequest{
+		Name: "target", Statements: []*turnstilev1.Statement{{Effect: turnstilev1.Effect_ALLOW, Actions: []string{"svc:*"}, Resources: []string{"*"}}},
+	})
+	// mgr is scoped to update ONLY target.
+	mgr := mustCreateKey(t, env, &turnstilev1.CreateKeyRequest{
+		Name: "mgr", Statements: []*turnstilev1.Statement{{Effect: turnstilev1.Effect_ALLOW, Actions: []string{"turnstile:update-key"}, Resources: []string{target.Id}}},
+	})
+
+	// target cannot manage yet.
+	lr := connect.NewRequest(&turnstilev1.ListKeysRequest{})
+	withToken(lr, target.PlaintextToken)
+	if _, err := env.client.ListKeys(ctx, lr); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("target should not manage before escalation: got %v", connect.CodeOf(err))
+	}
+
+	// mgr (scoped to target) rewrites target's statements to full admin.
+	esc := connect.NewRequest(&turnstilev1.UpdateKeyRequest{
+		Id:         target.Id,
+		Statements: &turnstilev1.StatementList{Statements: allowAll()},
+	})
+	withToken(esc, mgr.PlaintextToken)
+	if _, err := env.client.UpdateKey(ctx, esc); err != nil {
+		t.Fatalf("scoped update-key should be allowed to rewrite target statements: %v", err)
+	}
+
+	// target is now full admin — the narrowly-scoped update-key grant was
+	// admin-equivalent.
+	lr2 := connect.NewRequest(&turnstilev1.ListKeysRequest{})
+	withToken(lr2, target.PlaintextToken)
+	if _, err := env.client.ListKeys(ctx, lr2); err != nil {
+		t.Errorf("after escalation target should manage; got %v", connect.CodeOf(err))
+	}
+}
+
 // TestManagementIgnoresGlobalCeiling: a global deny of turnstile:* must not lock
 // out a full-admin key — management is evaluated against the key alone.
 func TestManagementIgnoresGlobalCeiling(t *testing.T) {
@@ -490,6 +534,19 @@ func TestManagementAuditing(t *testing.T) {
 	}
 }
 
+// TestAuditEntryJSONEmitsAllowed guards the enum renumber: ALLOWED must not be
+// the proto3 zero value, or protojson omits it and the UI (Connect HTTP/JSON)
+// renders a blank decision for the most common outcome.
+func TestAuditEntryJSONEmitsAllowed(t *testing.T) {
+	b, err := protojson.Marshal(&turnstilev1.AuditEntry{Decision: turnstilev1.Decision_ALLOWED})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(b), `"decision":"ALLOWED"`) {
+		t.Errorf("ALLOWED decision must appear in JSON (not omitted as zero value); got %s", b)
+	}
+}
+
 // TestHostRPCsOpen: host-facing RPCs need no credential (SERVICE_CREDENTIAL is
 // gone) — Check with no auth header returns a decision rather than erroring.
 func TestHostRPCsOpen(t *testing.T) {
@@ -555,8 +612,6 @@ func TestGenericAuthFailureIndistinguishable(t *testing.T) {
 	}
 }
 
-// TestCheckWritesNoAudit asserts the spec requirement that Check never writes an
-// audit entry (hosts report audit afterward via ReportAudit).
 // TestCheckWritesAudit asserts Check records one audit row per decision, with
 // the decision captured.
 func TestCheckWritesAudit(t *testing.T) {

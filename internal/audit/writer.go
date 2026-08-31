@@ -1,10 +1,10 @@
-// Package audit records one entry per authenticated request. Hosts report
-// entries after a request completes (status and latency aren't known until
-// then) via the ReportAudit RPC (a unary batch call). The Writer persists them from a
-// single background consumer so writes are serialized (matching SQLite's
-// single-writer model) and their id order tracks arrival, and it drains
-// in-flight entries at shutdown so the last ones aren't lost to a closing DB.
-// Retention prunes old entries on a periodic loop.
+// Package audit persists the audit entries Turnstile records itself — one per
+// Check decision, and one per management mutation or denied attempt (there is no
+// host-reported intake). The Writer drains them from a single background consumer
+// so writes are serialized (matching SQLite's single-writer model) and their id
+// order tracks arrival, and it drains in-flight entries at shutdown so the last
+// ones aren't lost to a closing DB. Retention prunes old entries on a periodic
+// loop.
 package audit
 
 import (
@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"harrisonhjones.com/turnstile/internal/metrics"
 	"harrisonhjones.com/turnstile/internal/store"
 )
 
@@ -69,6 +70,7 @@ func (w *Writer) Write(e *store.AuditEntry) bool {
 		return false
 	default:
 		// Queue full — drop rather than block the caller (e.g. the Check hot path).
+		metrics.RecordAuditDrop()
 		n := w.dropped.Add(1)
 		if n == 1 || n%1000 == 0 {
 			slog.Warn("audit queue full; dropping entries", "dropped_total", n)

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"path/filepath"
 	"testing"
@@ -356,5 +357,68 @@ func TestAuditLikeEscaping(t *testing.T) {
 	got2, _, _ := s.ListAuditEntries(ctx, AuditFilter{ActionPrefix: "a_", Limit: 10})
 	if len(got2) != 1 || got2[0].Action != "a_b" {
 		t.Errorf(`ActionPrefix "a_" should match only "a_b", got %d entries`, len(got2))
+	}
+}
+
+// TestMigrateLegacyAuditLog verifies the v0→v1 migration: an existing DB with the
+// old audit_log shape (no decision column) and the removed admin_credentials
+// table is rebuilt/dropped so the current schema works, rather than silently
+// breaking audit on upgrade.
+func TestMigrateLegacyAuditLog(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy.db")
+
+	// Seed a legacy DB directly (user_version stays 0).
+	raw, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("open raw: %v", err)
+	}
+	if _, err := raw.Exec(`
+		CREATE TABLE audit_log (
+			id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp INTEGER NOT NULL,
+			api_key_id TEXT NOT NULL, api_key_name TEXT NOT NULL, method TEXT NOT NULL,
+			path TEXT NOT NULL, action TEXT NOT NULL DEFAULT '', resource TEXT NOT NULL DEFAULT '',
+			request_summary TEXT NOT NULL DEFAULT '', response_status INTEGER NOT NULL, latency_ms INTEGER NOT NULL);
+		CREATE TABLE admin_credentials (id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, cred_hash TEXT NOT NULL UNIQUE, note TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, last_used_at INTEGER);
+		INSERT INTO audit_log (timestamp, api_key_id, api_key_name, method, path, response_status, latency_ms) VALUES (1, 'k', 'n', 'REST', '/x', 200, 3);
+	`); err != nil {
+		t.Fatalf("seed legacy: %v", err)
+	}
+	raw.Close()
+
+	// Open through the store — migrate runs here.
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("open (migrate): %v", err)
+	}
+	t.Cleanup(func() { s.Close() })
+
+	// New-shape audit_log works (decision column present; legacy rows discarded).
+	if err := s.InsertAuditEntry(context.Background(), &AuditEntry{
+		Timestamp: time.Now(), APIKeyID: "k", Action: "svc:read", Resource: "svc:x", Decision: "ALLOWED",
+	}); err != nil {
+		t.Fatalf("insert after migrate: %v", err)
+	}
+	entries, _, err := s.ListAuditEntries(context.Background(), AuditFilter{Limit: 10})
+	if err != nil {
+		t.Fatalf("list after migrate: %v", err)
+	}
+	if len(entries) != 1 || entries[0].Decision != "ALLOWED" {
+		t.Errorf("expected only the new row after rebuild, got %+v", entries)
+	}
+
+	// admin_credentials dropped; user_version bumped.
+	var n int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='admin_credentials'`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Error("admin_credentials should have been dropped")
+	}
+	var uv int
+	if err := s.db.QueryRow(`PRAGMA user_version`).Scan(&uv); err != nil {
+		t.Fatal(err)
+	}
+	if uv != schemaVersion {
+		t.Errorf("user_version = %d, want %d", uv, schemaVersion)
 	}
 }

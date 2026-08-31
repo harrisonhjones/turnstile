@@ -1,6 +1,6 @@
-// Package store provides SQLite-backed persistence for API keys, admin
-// credentials, the global service policy, and the audit log. It uses the
-// pure-Go modernc.org/sqlite driver (no CGO).
+// Package store provides SQLite-backed persistence for API keys, the global
+// service policy, and the audit log. It uses the pure-Go modernc.org/sqlite
+// driver (no CGO).
 package store
 
 import (
@@ -50,12 +50,76 @@ func Open(path string) (*Store, error) {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
 
+	// Migrate any pre-existing DB to the current schema shape BEFORE the
+	// CREATE TABLE IF NOT EXISTS below (which is a no-op for tables that already
+	// exist and so can't reshape them on its own).
+	if err := migrate(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("migrate: %w", err)
+	}
+
 	if _, err := db.Exec(schema); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("apply schema: %w", err)
 	}
 
 	return &Store{db: db}, nil
+}
+
+// schemaVersion is the current on-disk schema generation, tracked in SQLite's
+// PRAGMA user_version. Bump it and add a migration step whenever a released
+// schema change isn't achievable via CREATE TABLE IF NOT EXISTS alone.
+const schemaVersion = 1
+
+// migrate brings an existing database up to schemaVersion. A fresh database
+// (user_version 0, no tables) passes through untouched — Open's schema apply
+// creates everything. The v0→v1 step handles the self-managed-auth/audit
+// reshape: the admin_credentials table was removed, and audit_log was reshaped
+// (a decision column added, the old host-reported columns dropped). Because
+// those are incompatible with a plain IF NOT EXISTS, drop the dead
+// admin_credentials table and rebuild a *legacy* audit_log (one lacking the
+// decision column) so the schema recreates it fresh. Old audit rows are
+// discarded — acceptable pre-1.0, and their host-reported shape is gone anyway.
+// A database already at the new shape is left intact.
+func migrate(db *sql.DB) error {
+	var uv int
+	if err := db.QueryRow(`PRAGMA user_version`).Scan(&uv); err != nil {
+		return fmt.Errorf("read user_version: %w", err)
+	}
+	if uv >= schemaVersion {
+		return nil
+	}
+
+	if _, err := db.Exec(`DROP TABLE IF EXISTS admin_credentials`); err != nil {
+		return fmt.Errorf("drop admin_credentials: %w", err)
+	}
+
+	// Rebuild audit_log only if it exists in the legacy shape (no decision column).
+	var auditExists int
+	if err := db.QueryRow(
+		`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='audit_log'`,
+	).Scan(&auditExists); err != nil {
+		return fmt.Errorf("check audit_log: %w", err)
+	}
+	if auditExists > 0 {
+		var hasDecision int
+		if err := db.QueryRow(
+			`SELECT COUNT(*) FROM pragma_table_info('audit_log') WHERE name='decision'`,
+		).Scan(&hasDecision); err != nil {
+			return fmt.Errorf("inspect audit_log columns: %w", err)
+		}
+		if hasDecision == 0 {
+			if _, err := db.Exec(`DROP TABLE audit_log`); err != nil {
+				return fmt.Errorf("drop legacy audit_log: %w", err)
+			}
+		}
+	}
+
+	// user_version takes no bind parameters; schemaVersion is a trusted constant.
+	if _, err := db.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, schemaVersion)); err != nil {
+		return fmt.Errorf("set user_version: %w", err)
+	}
+	return nil
 }
 
 // dsn builds a modernc.org/sqlite DSN that applies connectionPragmas to every

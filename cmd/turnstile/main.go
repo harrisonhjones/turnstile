@@ -144,6 +144,8 @@ func run(breakGlass bool) error {
 		}
 		slog.Warn("break-glass: minted a fresh full-admin key — store this token now, it will not be shown again",
 			"token", tok)
+		slog.Warn("break-glass is one-shot: unset -bootstrap / TURNSTILE_BOOTSTRAP before the next restart, " +
+			"or another full-admin key is minted every start")
 	}
 
 	// Load the global policy into an in-memory cache for fast authorization.

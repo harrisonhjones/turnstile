@@ -17,10 +17,11 @@ import (
 
 // Metrics holds the Prometheus collectors for the server.
 type Metrics struct {
-	registry *prometheus.Registry
-	httpReqs *prometheus.CounterVec   // labels: code
-	httpDur  *prometheus.HistogramVec // labels: code
-	checks   *prometheus.CounterVec   // labels: decision
+	registry     *prometheus.Registry
+	httpReqs     *prometheus.CounterVec   // labels: code
+	httpDur      *prometheus.HistogramVec // labels: code
+	checks       *prometheus.CounterVec   // labels: decision
+	auditDropped prometheus.Counter       // audit rows dropped (queue full)
 }
 
 // global is the process-wide instance, set by Enable. nil means metrics are
@@ -51,8 +52,12 @@ func Enable() *Metrics {
 			Namespace: "turnstile", Subsystem: "check", Name: "decisions_total",
 			Help: "Check decisions by outcome (allowed, policy_denied, rate_limited, unauthenticated).",
 		}, []string{"decision"}),
+		auditDropped: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: "turnstile", Subsystem: "audit", Name: "dropped_total",
+			Help: "Audit entries dropped because the write queue was full.",
+		}),
 	}
-	reg.MustRegister(m.httpReqs, m.httpDur, m.checks)
+	reg.MustRegister(m.httpReqs, m.httpDur, m.checks, m.auditDropped)
 	global = m
 	return m
 }
@@ -78,4 +83,13 @@ func RecordCheck(decision string) {
 		return
 	}
 	global.checks.WithLabelValues(decision).Inc()
+}
+
+// RecordAuditDrop counts one audit entry dropped because the write queue was
+// full. No-op when metrics are disabled.
+func RecordAuditDrop() {
+	if global == nil {
+		return
+	}
+	global.auditDropped.Inc()
 }

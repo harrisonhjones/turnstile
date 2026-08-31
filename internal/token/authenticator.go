@@ -14,8 +14,7 @@ import (
 // interval.
 const touchInterval = time.Minute
 
-// Authenticator validates presented tokens and admin credentials against the
-// store.
+// Authenticator validates presented API-key tokens against the store.
 type Authenticator struct {
 	store *store.Store
 	now   func() time.Time

@@ -39,9 +39,11 @@ defaults), seeded from an optional `.env` file. The full reference is in
 
 `/metrics` (when enabled) is unauthenticated too and exposes the standard Go
 runtime/process collectors plus `turnstile_http_requests_total`,
-`turnstile_http_request_duration_seconds`, and `turnstile_check_decisions_total`
+`turnstile_http_request_duration_seconds`, `turnstile_check_decisions_total`
 (labelled by decision: `allowed`, `policy_denied`, `rate_limited`,
-`unauthenticated`). It shares the main listener.
+`unauthenticated`), and `turnstile_audit_dropped_total` (audit rows dropped when
+the write queue is full — nonzero means sustained audit loss under load). It
+shares the main listener.
 
 **Securing it.** Following Prometheus convention, the endpoint carries no
 built-in auth — the metrics hold operational counts, not secrets, and the
@@ -118,14 +120,20 @@ Per-key operations (`get`/`update`/`rotate`/`delete`) authorize against the
 against `*`. Roles are therefore just policies on a key:
 
 - **Full admin** — `allow turnstile:* on *`.
-- **Auditor** — `allow turnstile:query-audit on *`.
-- **Scoped key-manager** — `allow turnstile:{get,update,rotate}-key on
-  turnstile:key:<that-id>` plus `allow turnstile:list-keys on *`.
+- **Auditor** — `allow turnstile:query-audit on *` (read-only; cannot escalate).
 
-Grant these with `CreateKey`/`UpdateKey` like any other statements. Note that a
-key allowing `turnstile:update-policy` or `turnstile:update-key` on itself can
-grant itself more capability — self-escalation is inherent to admin, so scope
-those grants deliberately.
+Grant these with `CreateKey`/`UpdateKey` like any other statements.
+
+> **Statement-editing grants are admin-equivalent.** Management is evaluated
+> against the caller key's *own* statements (the global deny-only ceiling does
+> not apply), so any key that can edit a key's `statements` — i.e. **any**
+> `turnstile:update-key` grant (even one scoped to a single key id, including its
+> own) or a `turnstile:update-policy` grant — can rewrite those statements to
+> `allow turnstile:* on *` and mint full admin. Policy cannot fence this off.
+> **Treat any `create`/`update`/`rotate`/`delete-key` or `update-policy` grant as
+> equivalent to full admin** and scope it accordingly. Only the read-only actions
+> (`get-key`, `list-keys`, `read-policy`, `query-audit`) are safe to delegate
+> narrowly.
 
 **Rotating a management (or client) key.** `RotateKey` regenerates a key's secret
 in place — same id, policy, rate limits, and name — and returns the new plaintext

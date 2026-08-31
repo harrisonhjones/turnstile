@@ -251,7 +251,7 @@ func Check() error {
 }
 
 // ResetDB deletes the SQLite database (and its WAL/SHM sidecar files) so the
-// next server start bootstraps a fresh admin credential. Honors DB_PATH;
+// next server start bootstraps a fresh full-admin key. Honors DB_PATH;
 // defaults to turnstile.db. Missing files are ignored, so it is safe anytime.
 func ResetDB() error {
 	dbPath := os.Getenv("DB_PATH")

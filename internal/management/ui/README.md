@@ -6,7 +6,7 @@ ceiling), and browse/filter the **audit log**.
 
 It is a plain API client: it talks to Turnstile over the **Connect HTTP/JSON**
 protocol (`POST /turnstile.v1.Turnstile/<Method>`), authenticating with an
-**admin credential** pasted at sign-in (sent as `Authorization: Bearer`). No
+**management key** pasted at sign-in (sent as `Authorization: Bearer`). No
 generated client — see `src/api.ts`.
 
 ## Develop

@@ -209,11 +209,16 @@ message CheckResponse {
   RateLimitVerdict rate_limit = 4;
 }
 
+// Decision values are numbered from 1 so the zero value is DECISION_UNSPECIFIED,
+// not a real outcome — otherwise proto3 JSON omits an ALLOWED decision (its zero
+// value), blanking it on the wire, and an unknown decision string would decode to
+// the most misleading label. A real decision is always one of the last four.
 enum Decision {
-  ALLOWED = 0;
-  UNAUTHENTICATED = 1;
-  POLICY_DENIED = 2;
-  RATE_LIMITED = 3;
+  DECISION_UNSPECIFIED = 0;
+  ALLOWED = 1;
+  UNAUTHENTICATED = 2;
+  POLICY_DENIED = 3;
+  RATE_LIMITED = 4;
 }
 
 message RateLimitVerdict {

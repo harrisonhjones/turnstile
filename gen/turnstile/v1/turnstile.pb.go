@@ -75,28 +75,35 @@ func (Effect) EnumDescriptor() ([]byte, []int) {
 	return file_turnstile_v1_turnstile_proto_rawDescGZIP(), []int{0}
 }
 
+// Decision values are numbered from 1 so the zero value is DECISION_UNSPECIFIED,
+// not a real outcome — otherwise proto3 JSON omits an ALLOWED decision (its zero
+// value), blanking it on the wire, and an unknown decision string would decode to
+// the most misleading label. A real decision is always one of the last four.
 type Decision int32
 
 const (
-	Decision_ALLOWED         Decision = 0
-	Decision_UNAUTHENTICATED Decision = 1
-	Decision_POLICY_DENIED   Decision = 2
-	Decision_RATE_LIMITED    Decision = 3
+	Decision_DECISION_UNSPECIFIED Decision = 0
+	Decision_ALLOWED              Decision = 1
+	Decision_UNAUTHENTICATED      Decision = 2
+	Decision_POLICY_DENIED        Decision = 3
+	Decision_RATE_LIMITED         Decision = 4
 )
 
 // Enum value maps for Decision.
 var (
 	Decision_name = map[int32]string{
-		0: "ALLOWED",
-		1: "UNAUTHENTICATED",
-		2: "POLICY_DENIED",
-		3: "RATE_LIMITED",
+		0: "DECISION_UNSPECIFIED",
+		1: "ALLOWED",
+		2: "UNAUTHENTICATED",
+		3: "POLICY_DENIED",
+		4: "RATE_LIMITED",
 	}
 	Decision_value = map[string]int32{
-		"ALLOWED":         0,
-		"UNAUTHENTICATED": 1,
-		"POLICY_DENIED":   2,
-		"RATE_LIMITED":    3,
+		"DECISION_UNSPECIFIED": 0,
+		"ALLOWED":              1,
+		"UNAUTHENTICATED":      2,
+		"POLICY_DENIED":        3,
+		"RATE_LIMITED":         4,
 	}
 )
 
@@ -1265,7 +1272,7 @@ func (x *CheckResponse) GetDecision() Decision {
 	if x != nil {
 		return x.Decision
 	}
-	return Decision_ALLOWED
+	return Decision_DECISION_UNSPECIFIED
 }
 
 func (x *CheckResponse) GetRateLimit() *RateLimitVerdict {
@@ -1500,7 +1507,7 @@ func (x *AuditEntry) GetDecision() Decision {
 	if x != nil {
 		return x.Decision
 	}
-	return Decision_ALLOWED
+	return Decision_DECISION_UNSPECIFIED
 }
 
 func (x *AuditEntry) GetTimestamp() *timestamppb.Timestamp {
@@ -1571,7 +1578,7 @@ func (x *QueryAuditRequest) GetDecision() Decision {
 	if x != nil && x.Decision != nil {
 		return *x.Decision
 	}
-	return Decision_ALLOWED
+	return Decision_DECISION_UNSPECIFIED
 }
 
 func (x *QueryAuditRequest) GetAfter() *timestamppb.Timestamp {
@@ -1812,12 +1819,13 @@ const file_turnstile_v1_turnstile_proto_rawDesc = "" +
 	"\x06Effect\x12\x16\n" +
 	"\x12EFFECT_UNSPECIFIED\x10\x00\x12\t\n" +
 	"\x05ALLOW\x10\x01\x12\b\n" +
-	"\x04DENY\x10\x02*Q\n" +
-	"\bDecision\x12\v\n" +
-	"\aALLOWED\x10\x00\x12\x13\n" +
-	"\x0fUNAUTHENTICATED\x10\x01\x12\x11\n" +
-	"\rPOLICY_DENIED\x10\x02\x12\x10\n" +
-	"\fRATE_LIMITED\x10\x032\x80\x06\n" +
+	"\x04DENY\x10\x02*k\n" +
+	"\bDecision\x12\x18\n" +
+	"\x14DECISION_UNSPECIFIED\x10\x00\x12\v\n" +
+	"\aALLOWED\x10\x01\x12\x13\n" +
+	"\x0fUNAUTHENTICATED\x10\x02\x12\x11\n" +
+	"\rPOLICY_DENIED\x10\x03\x12\x10\n" +
+	"\fRATE_LIMITED\x10\x042\x80\x06\n" +
 	"\tTurnstile\x12@\n" +
 	"\x05Check\x12\x1a.turnstile.v1.CheckRequest\x1a\x1b.turnstile.v1.CheckResponse\x12J\n" +
 	"\fAuthenticate\x12!.turnstile.v1.AuthenticateRequest\x1a\x17.turnstile.v1.Principal\x12>\n" +

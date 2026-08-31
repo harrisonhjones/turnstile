@@ -78,8 +78,7 @@ func (h *Handler) CreateKey(ctx context.Context, req *connect.Request[turnstilev
 	return connect.NewResponse(pbKey), nil
 }
 
-// ListKeys returns keys, optionally including disabled and filtered by owner
-// namespace.
+// ListKeys returns keys, optionally including disabled ones.
 func (h *Handler) ListKeys(ctx context.Context, req *connect.Request[turnstilev1.ListKeysRequest]) (*connect.Response[turnstilev1.ListKeysResponse], error) {
 	if _, err := h.requireManage(ctx, req.Header(), "turnstile:list-keys", "*"); err != nil {
 		return nil, err

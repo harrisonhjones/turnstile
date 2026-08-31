@@ -208,11 +208,17 @@ func principalToPB(k *store.APIKey) *turnstilev1.Principal {
 // ---- Audit ----
 
 func auditToPB(e *store.AuditEntry) *turnstilev1.AuditEntry {
+	// Map the stored decision name to the enum; an unknown/empty string decodes to
+	// DECISION_UNSPECIFIED (an honest "unknown") rather than silently to ALLOWED.
+	decision := turnstilev1.Decision_DECISION_UNSPECIFIED
+	if v, ok := turnstilev1.Decision_value[e.Decision]; ok {
+		decision = turnstilev1.Decision(v)
+	}
 	return &turnstilev1.AuditEntry{
 		ApiKeyId:  e.APIKeyID,
 		Action:    e.Action,
 		Resource:  e.Resource,
-		Decision:  turnstilev1.Decision(turnstilev1.Decision_value[e.Decision]),
+		Decision:  decision,
 		Timestamp: timeToPB(e.Timestamp),
 	}
 }

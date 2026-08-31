@@ -13,8 +13,8 @@ import (
 // ErrNotFound is returned when a lookup finds no matching row.
 var ErrNotFound = errors.New("not found")
 
-// ErrNameTaken is returned when a create/update would violate a unique name
-// constraint (api_keys.name or admin_credentials.name).
+// ErrNameTaken is returned when a create/update would violate the unique
+// api_keys.name constraint.
 var ErrNameTaken = errors.New("name already in use")
 
 // isUniqueViolation reports whether err is specifically a SQLite UNIQUE
