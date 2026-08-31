@@ -499,6 +499,52 @@ func TestRotateKeyOverWire(t *testing.T) {
 	}
 }
 
+// TestManagementAuditing: mutations are self-audited on success, and denied
+// (PermissionDenied) attempts are audited too; successful reads are not.
+func TestManagementAuditing(t *testing.T) {
+	env := newTestEnv(t)
+	ctx := context.Background()
+
+	// Two mutations (create-key) by the admin.
+	created := mustCreateKey(t, env, &turnstilev1.CreateKeyRequest{Name: "auditee", Statements: allowAll()})
+	plain := mustCreateKey(t, env, &turnstilev1.CreateKeyRequest{
+		Name: "plain", Statements: []*turnstilev1.Statement{{Effect: turnstilev1.Effect_ALLOW, Actions: []string{"svc:*"}, Resources: []string{"*"}}},
+	})
+
+	// A denied attempt (ungranted key doing ListKeys).
+	lr := connect.NewRequest(&turnstilev1.ListKeysRequest{})
+	withToken(lr, plain.PlaintextToken)
+	if _, err := env.client.ListKeys(ctx, lr); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("expected PermissionDenied, got %v", connect.CodeOf(err))
+	}
+
+	// 2 create-key (success) + 1 list-keys (denied) = 3 management audit entries.
+	// (The QueryAudit reads below are not themselves audited.)
+	waitForAudit(t, env, 3)
+
+	qr := connect.NewRequest(&turnstilev1.QueryAuditRequest{ActionPrefix: "turnstile:", Limit: 50})
+	withAdmin(env, qr)
+	q, err := env.client.QueryAudit(ctx, qr)
+	if err != nil {
+		t.Fatalf("QueryAudit: %v", err)
+	}
+	var createSeen, deniedSeen bool
+	for _, e := range q.Msg.Entries {
+		if e.Action == "turnstile:create-key" && e.Resource == created.Id && e.ResponseStatus == 200 {
+			createSeen = true
+		}
+		if e.Action == "turnstile:list-keys" && e.ResponseStatus == 403 {
+			deniedSeen = true
+		}
+	}
+	if !createSeen {
+		t.Error("expected an audited turnstile:create-key mutation for the created key")
+	}
+	if !deniedSeen {
+		t.Error("expected an audited denied turnstile:list-keys attempt (status 403)")
+	}
+}
+
 // TestHostRPCsOpen: host-facing RPCs need no credential (SERVICE_CREDENTIAL is
 // gone) — Check with no auth header returns a decision rather than erroring.
 func TestHostRPCsOpen(t *testing.T) {
@@ -590,8 +636,16 @@ func TestCheckWritesNoAudit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list audit: %v", err)
 	}
-	if len(entries) != 0 {
-		t.Errorf("Check must not write audit; found %d entries", len(entries))
+	// The only entries should be management self-audit (the CreateKey above);
+	// Check itself writes nothing.
+	var fromCheck int
+	for _, e := range entries {
+		if e.Method != "MANAGE" {
+			fromCheck++
+		}
+	}
+	if fromCheck != 0 {
+		t.Errorf("Check must not write audit; found %d non-management entries", fromCheck)
 	}
 }
 

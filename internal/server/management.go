@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -35,7 +36,8 @@ func invalidArg(format string, args ...any) error {
 // CreateKey mints a new API key and returns it with the plaintext token set
 // exactly once.
 func (h *Handler) CreateKey(ctx context.Context, req *connect.Request[turnstilev1.CreateKeyRequest]) (*connect.Response[turnstilev1.Key], error) {
-	if _, err := h.requireManage(ctx, req.Header(), "turnstile:create-key", "*"); err != nil {
+	caller, err := h.requireManage(ctx, req.Header(), "turnstile:create-key", "*")
+	if err != nil {
 		return nil, err
 	}
 	r := req.Msg
@@ -70,6 +72,7 @@ func (h *Handler) CreateKey(ctx context.Context, req *connect.Request[turnstilev
 	if err := h.store.CreateAPIKey(ctx, k); err != nil {
 		return nil, storeErr(err)
 	}
+	h.writeManageAudit(caller, "turnstile:create-key", k.ID, http.StatusOK)
 
 	pbKey := keyToPB(k)
 	pbKey.PlaintextToken = plaintext
@@ -116,7 +119,8 @@ func (h *Handler) UpdateKey(ctx context.Context, req *connect.Request[turnstilev
 	if r.Id == "" {
 		return nil, invalidArg("id is required")
 	}
-	if _, err := h.requireManage(ctx, req.Header(), "turnstile:update-key", r.Id); err != nil {
+	caller, err := h.requireManage(ctx, req.Header(), "turnstile:update-key", r.Id)
+	if err != nil {
 		return nil, err
 	}
 	if r.ClearExpiry && r.ExpiresAt != nil {
@@ -175,6 +179,7 @@ func (h *Handler) UpdateKey(ctx context.Context, req *connect.Request[turnstilev
 	if err != nil {
 		return nil, storeErr(err)
 	}
+	h.writeManageAudit(caller, "turnstile:update-key", r.Id, http.StatusOK)
 	return connect.NewResponse(keyToPB(updated)), nil
 }
 
@@ -185,7 +190,8 @@ func (h *Handler) RotateKey(ctx context.Context, req *connect.Request[turnstilev
 	if req.Msg.Id == "" {
 		return nil, invalidArg("id is required")
 	}
-	if _, err := h.requireManage(ctx, req.Header(), "turnstile:rotate-key", req.Msg.Id); err != nil {
+	caller, err := h.requireManage(ctx, req.Header(), "turnstile:rotate-key", req.Msg.Id)
+	if err != nil {
 		return nil, err
 	}
 	plaintext, hash, err := token.Generate(token.APIKeyPrefix)
@@ -196,6 +202,7 @@ func (h *Handler) RotateKey(ctx context.Context, req *connect.Request[turnstilev
 	if err != nil {
 		return nil, storeErr(err)
 	}
+	h.writeManageAudit(caller, "turnstile:rotate-key", req.Msg.Id, http.StatusOK)
 	pbKey := keyToPB(updated)
 	pbKey.PlaintextToken = plaintext
 	return connect.NewResponse(pbKey), nil
@@ -206,13 +213,15 @@ func (h *Handler) DeleteKey(ctx context.Context, req *connect.Request[turnstilev
 	if req.Msg.Id == "" {
 		return nil, invalidArg("id is required")
 	}
-	if _, err := h.requireManage(ctx, req.Header(), "turnstile:delete-key", req.Msg.Id); err != nil {
+	caller, err := h.requireManage(ctx, req.Header(), "turnstile:delete-key", req.Msg.Id)
+	if err != nil {
 		return nil, err
 	}
 	if err := h.store.DeleteAPIKey(ctx, req.Msg.Id); err != nil {
 		return nil, storeErr(err)
 	}
 	h.rateLimiter.ForgetKey(req.Msg.Id)
+	h.writeManageAudit(caller, "turnstile:delete-key", req.Msg.Id, http.StatusOK)
 	return connect.NewResponse(&emptypb.Empty{}), nil
 }
 
@@ -261,6 +270,7 @@ func (h *Handler) UpdatePolicy(ctx context.Context, req *connect.Request[turnsti
 	h.policyCache.Set(gp)
 	h.rateLimiter.SetGlobal(limits)
 
+	h.writeManageAudit(callerKey, "turnstile:update-policy", "*", http.StatusOK)
 	return connect.NewResponse(policyToPB(gp)), nil
 }
 

@@ -232,10 +232,23 @@ or loosen specific actions via its own `rateLimits` map (`CreateKey`/`UpdateKey`
 
 ## Auditing
 
-Turnstile records one row per completed request — but hosts report those rows
-*after the fact* (via `ReportAudit`); `Check` itself never writes audit. Query
-the log with `QueryAudit`, filterable by key, action-namespace prefix, method,
-status, and time range, with keyset pagination:
+The audit log has two sources:
+
+- **Host-reported request audit.** Hosts report one row per completed request
+  *after the fact* via `ReportAudit`; the `Check` hot path itself never writes
+  audit (status and latency aren't known until the host finishes). A denied
+  `Check` is therefore only in the log if the host reported it.
+- **Management-plane self-audit.** Turnstile records its own management actions
+  directly (`method` = `MANAGE`): every **mutation** on success (`create`/
+  `update`/`rotate`/`delete`-key and `update-policy`) and every **denied**
+  attempt (an authenticated key that lacked the `turnstile:` grant → status
+  `403`). Successful reads (`list`/`get`/`query-audit`/`read-policy`) are not
+  audited, to keep the log signal-heavy. The entry's `api_key_id` is the caller's
+  key and `action` is the `turnstile:<op>`.
+
+Query the log with `QueryAudit`, filterable by key, action-namespace prefix,
+method, status, and time range, with keyset pagination (e.g. `"method": "MANAGE"`
+for just the management trail):
 
 ```sh
 curl -sS http://localhost:8080/turnstile.v1.Turnstile/QueryAudit \

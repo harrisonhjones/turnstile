@@ -113,9 +113,37 @@ func (h *Handler) requireManage(ctx context.Context, hdr http.Header, action str
 		return nil, connect.NewError(connect.CodeInternal, errors.New("could not validate credential"))
 	}
 	if !h.authorizer.AuthorizeManagement(principal.Key, action, resources...).Allowed {
+		res := ""
+		if len(resources) > 0 {
+			res = resources[0]
+		}
+		// Self-audit the denied attempt: an authenticated key that lacked the grant
+		// is a security-relevant signal.
+		h.writeManageAudit(principal.Key, action, res, http.StatusForbidden)
 		return nil, connect.NewError(connect.CodePermissionDenied, fmt.Errorf("key is not permitted to %s", action))
 	}
 	return principal.Key, nil
+}
+
+// writeManageAudit records a management-plane audit entry (best-effort; a full
+// queue during shutdown just drops it). Turnstile self-audits its own management
+// RPCs — successful mutations and denied (PermissionDenied) attempts — because it
+// is the authority for turnstile:* actions. This is distinct from the Check hot
+// path, whose audit is host-reported via ReportAudit.
+func (h *Handler) writeManageAudit(caller *store.APIKey, action, resource string, status int) {
+	var id, name string
+	if caller != nil {
+		id, name = caller.ID, caller.Name
+	}
+	h.auditWriter.Write(&store.AuditEntry{
+		APIKeyID:       id,
+		APIKeyName:     name,
+		Method:         "MANAGE",
+		Action:         action,
+		Resource:       resource,
+		ResponseStatus: status,
+		Timestamp:      h.now(),
+	})
 }
 
 // ---- hot path ----
