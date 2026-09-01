@@ -4,7 +4,7 @@
 // dedicated "verify credential" RPC, so a pasted key is validated lazily by the
 // first management call (GetPolicy) during sign-in — which also confirms the key
 // actually has management access.
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { API, APIError, Auth } from "./api";
 
 interface AuthState {
@@ -19,12 +19,33 @@ const AuthContext = createContext<AuthState | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [signedIn, setSignedIn] = useState(false);
   const [loading, setLoading] = useState(true);
+  // Mirror of signedIn readable from the onUnauthorized closure (which is
+  // registered once and must not capture a stale value).
+  const signedInRef = useRef(false);
+  signedInRef.current = signedIn;
 
   // On startup, treat a stored token as signed-in (it is re-validated by the
-  // first real call; a 401 there sends the user back to Login via signOut).
+  // first real call; a 401 there sends the user back to Login via signOut,
+  // wired below through Auth.onUnauthorized).
   useEffect(() => {
     setSignedIn(!!Auth.load());
     setLoading(false);
+  }, []);
+
+  // Any RPC on an established session that comes back 401 (expired/revoked/
+  // rotated key) signs the operator out through the api layer's onUnauthorized
+  // hook, so a dead session returns to Login instead of wedging behind repeated
+  // errors. Guarded on signedInRef so the getPolicy() validation 401 during
+  // signIn (still signed out) is left entirely to signIn's own catch.
+  useEffect(() => {
+    Auth.onUnauthorized = () => {
+      if (!signedInRef.current) return;
+      Auth.clear();
+      setSignedIn(false);
+    };
+    return () => {
+      Auth.onUnauthorized = null;
+    };
   }, []);
 
   const signIn = async (token: string) => {

@@ -1,12 +1,12 @@
 # Turnstile management UI
 
 An Ionic React (Vite + TypeScript) single-page app for operating Turnstile:
-create/list/edit/disable **keys**, view/edit the global **policy** (deny-only
+create/list/edit/rotate/delete **keys**, view/edit the global **policy** (deny-only
 ceiling), and browse/filter the **audit log**.
 
 It is a plain API client: it talks to Turnstile over the **Connect HTTP/JSON**
-protocol (`POST /turnstile.v1.Turnstile/<Method>`), authenticating with an
-**management key** pasted at sign-in (sent as `Authorization: Bearer`). No
+protocol (`POST /turnstile.v1.Turnstile/<Method>`), authenticating with
+a **management key** pasted at sign-in (sent as `Authorization: Bearer`). No
 generated client — see `src/api.ts`.
 
 ## Develop

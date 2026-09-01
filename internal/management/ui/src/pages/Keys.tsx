@@ -83,9 +83,19 @@ export default function Keys() {
   const doRotate = async (key: Key) => {
     try {
       const rotated = await API.rotateKey(key.id); // new plaintext token, shown once
-      setTokenAction("rotated");
-      setNewToken(rotated);
-      void load();
+      // Mirror onSaved's guard: only reveal when the server actually returned a
+      // token, so a token-less response can't pop an empty reveal box.
+      if (rotated.plaintextToken) {
+        setTokenAction("rotated");
+        setNewToken(rotated);
+      } else {
+        setError("Rotation returned no token — try again.");
+      }
+      // No load() here: rotation changes no displayed field (id/name/policy/
+      // limits are unchanged — only the stored hash). Skipping the re-list also
+      // avoids a 401 if this is the key the console is signed in with, which
+      // would sign the operator out and unmount the reveal modal before they
+      // copy the new token. Their next action 401s → clean signOut → Login.
     } catch (e) {
       setError(e instanceof APIError ? e.message : String(e));
     }
@@ -181,7 +191,7 @@ export default function Keys() {
         <IonAlert
           isOpen={!!confirmRotate}
           header="Rotate key?"
-          message={`Issue a new token for "${confirmRotate?.name}"? Its id, policy, and rate limits stay the same, but the current token stops working immediately — update any client using it.`}
+          message={`Issue a new token for "${confirmRotate?.name}"? Its id, policy, and rate limits stay the same, but the current token stops working immediately — update any client using it. If this is the key you are signed in with, you'll be signed out; copy the new token and sign back in with it.`}
           buttons={[
             { text: "Cancel", role: "cancel" },
             {

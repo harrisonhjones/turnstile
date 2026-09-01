@@ -30,6 +30,11 @@ type testEnv struct {
 	client     turnstilev1connect.TurnstileClient
 	adminToken string
 	store      *store.Store
+
+	// httpClient and baseURL reach the same test server directly, for tests
+	// that must assert the raw wire HTTP status (not just connect.CodeOf).
+	httpClient *http.Client
+	baseURL    string
 }
 
 func withAdmin(env *testEnv, req connect.AnyRequest) {
@@ -87,7 +92,7 @@ func newTestEnvOpts(t *testing.T, wrap ...func(http.Handler) http.Handler) *test
 	t.Cleanup(ts.Close)
 
 	client := turnstilev1connect.NewTurnstileClient(ts.Client(), ts.URL)
-	return &testEnv{client: client, adminToken: adminToken, store: s}
+	return &testEnv{client: client, adminToken: adminToken, store: s, httpClient: ts.Client(), baseURL: ts.URL}
 }
 
 func TestServiceEndToEnd(t *testing.T) {
@@ -352,6 +357,53 @@ func TestManagementRequiresGrant(t *testing.T) {
 	withToken(r, plain.PlaintextToken)
 	if _, err := env.client.ListKeys(ctx, r); connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Errorf("ListKeys with an ungranted key: got %v, want PermissionDenied", connect.CodeOf(err))
+	}
+}
+
+// TestManagementWireHTTPStatus pins the Connect→HTTP status mapping the
+// management UI's auto-signout relies on: over the Connect unary/JSON protocol,
+// CodeUnauthenticated → 401 and CodePermissionDenied → 403. The UI keys its
+// global signout off resp.status === 401 (and its sign-in error off 401/403),
+// so if this mapping ever regressed (a middleware, or a protocol switch to
+// gRPC-Web where errors ride inside HTTP 200) the auto-signout would silently
+// stop firing. This asserts the raw wire status, which the connect.CodeOf-based
+// tests do not.
+func TestManagementWireHTTPStatus(t *testing.T) {
+	env := newTestEnv(t)
+	ctx := context.Background()
+
+	// An authenticated key with no turnstile: grant — valid token, ungranted.
+	plain := mustCreateKey(t, env, &turnstilev1.CreateKeyRequest{
+		Name: "plain", Statements: []*turnstilev1.Statement{{Effect: turnstilev1.Effect_ALLOW, Actions: []string{"svc:*"}, Resources: []string{"*"}}},
+	})
+
+	// GetPolicy is a management RPC (requires turnstile:read-policy).
+	post := func(bearer string) int {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, env.baseURL+"/turnstile.v1.Turnstile/GetPolicy", strings.NewReader("{}"))
+		if err != nil {
+			t.Fatalf("new request: %v", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if bearer != "" {
+			req.Header.Set("Authorization", "Bearer "+bearer)
+		}
+		resp, err := env.httpClient.Do(req)
+		if err != nil {
+			t.Fatalf("do: %v", err)
+		}
+		defer resp.Body.Close()
+		io.Copy(io.Discard, resp.Body)
+		return resp.StatusCode
+	}
+
+	if got := post(""); got != http.StatusUnauthorized {
+		t.Errorf("no credential: wire status = %d, want 401", got)
+	}
+	if got := post("tsk_garbage"); got != http.StatusUnauthorized {
+		t.Errorf("garbage credential: wire status = %d, want 401", got)
+	}
+	if got := post(plain.PlaintextToken); got != http.StatusForbidden {
+		t.Errorf("authenticated-but-ungranted: wire status = %d, want 403", got)
 	}
 }
 

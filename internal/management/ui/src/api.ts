@@ -19,6 +19,12 @@ const TOKEN_KEY = "turnstile_management_key";
 export const Auth = {
   token: null as string | null,
 
+  // onUnauthorized is invoked by connectRPC whenever an RPC comes back 401 —
+  // i.e. the current token is invalid (expired, revoked, or rotated out from
+  // under us). AuthProvider registers signOut here so any such RPC cleanly
+  // returns the operator to Login instead of leaving a wedged session.
+  onUnauthorized: null as (() => void) | null,
+
   load(): string | null {
     this.token = localStorage.getItem(TOKEN_KEY);
     return this.token;
@@ -69,6 +75,9 @@ export async function connectRPC<Req, Resp>(method: string, body: Req): Promise<
   if (!resp.ok) {
     const code = (data.code as string) || "";
     const message = (data.message as string) || `HTTP ${resp.status}`;
+    // A 401 means the token is no longer valid; drop it and let the app return
+    // to Login rather than surfacing repeated failures against a dead session.
+    if (resp.status === 401) Auth.onUnauthorized?.();
     throw new APIError(resp.status, code, message);
   }
   return data as Resp;
