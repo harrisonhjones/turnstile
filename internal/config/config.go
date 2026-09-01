@@ -33,6 +33,11 @@ type Config struct {
 	TLSKeyFile      string
 	TLSClientCAFile string
 
+	// TLSRequired, when true (TLS_REQUIRED), makes startup fail unless TLS is
+	// configured — a guard so a production deploy can't silently run in
+	// plaintext. It does not itself enable TLS; set the cert/key for that.
+	TLSRequired bool
+
 	// MetricsEnabled exposes Prometheus metrics at /metrics (unauthenticated,
 	// like /health). Defaults to true; set METRICS_ENABLED=false to turn off.
 	MetricsEnabled bool
@@ -54,6 +59,7 @@ func Load() (*Config, error) {
 		TLSCertFile:     os.Getenv("TLS_CERT_FILE"),
 		TLSKeyFile:      os.Getenv("TLS_KEY_FILE"),
 		TLSClientCAFile: os.Getenv("TLS_CLIENT_CA_FILE"),
+		TLSRequired:     boolEnvOrDefault("TLS_REQUIRED", false),
 		MetricsEnabled:  boolEnvOrDefault("METRICS_ENABLED", true),
 	}
 
@@ -68,6 +74,9 @@ func Load() (*Config, error) {
 	}
 	if cfg.TLSClientCAFile != "" && cfg.TLSCertFile == "" {
 		return nil, fmt.Errorf("TLS_CLIENT_CA_FILE requires TLS_CERT_FILE and TLS_KEY_FILE (mTLS needs a server cert)")
+	}
+	if cfg.TLSRequired && !cfg.TLSEnabled() {
+		return nil, fmt.Errorf("TLS_REQUIRED is set but TLS is not configured — set TLS_CERT_FILE and TLS_KEY_FILE")
 	}
 
 	return cfg, nil

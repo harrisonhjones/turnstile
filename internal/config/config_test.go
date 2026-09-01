@@ -56,3 +56,26 @@ func TestTLSPairing(t *testing.T) {
 		t.Error("expected error when TLS_CLIENT_CA_FILE is set without server cert/key")
 	}
 }
+
+func TestTLSRequired(t *testing.T) {
+	for _, k := range []string{"TLS_CERT_FILE", "TLS_KEY_FILE", "TLS_CLIENT_CA_FILE"} {
+		t.Setenv(k, "")
+	}
+
+	// TLS_REQUIRED without TLS configured must fail startup.
+	t.Setenv("TLS_REQUIRED", "true")
+	if _, err := Load(); err == nil {
+		t.Error("expected error when TLS_REQUIRED is set but TLS is not configured")
+	}
+
+	// With a server cert/key it loads.
+	t.Setenv("TLS_CERT_FILE", "cert.pem")
+	t.Setenv("TLS_KEY_FILE", "key.pem")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("load with TLS configured: %v", err)
+	}
+	if !cfg.TLSRequired || !cfg.TLSEnabled() {
+		t.Errorf("expected TLSRequired and TLSEnabled, got %+v", cfg)
+	}
+}

@@ -330,6 +330,14 @@ client side.
 Without mTLS the service-facing RPCs are reachable by anyone who can connect, so
 rely on network isolation (e.g. a private subnet) in that case.
 
+### Requiring TLS
+
+Set `TLS_REQUIRED=true` to make Turnstile **refuse to start** unless TLS is
+configured (`TLS_CERT_FILE` + `TLS_KEY_FILE`). It's a boot-time guard so a
+production deployment can't silently come up in plaintext; it does not enable TLS
+by itself. Pair it with `TLS_CLIENT_CA_FILE` to require full mTLS. Startup fails
+fast with a clear error if the flag is set but no server cert/key is present.
+
 ## The web console
 
 The management UI is served at `http://localhost:8080/ui/` (root redirects

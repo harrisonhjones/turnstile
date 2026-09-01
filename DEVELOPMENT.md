@@ -69,6 +69,7 @@ sane default.
 | `METRICS_ENABLED` | `true` | Expose Prometheus metrics at `/metrics` (unauthenticated, like `/health`). Set `false`/`0`/`off`/`no` to disable. |
 | `TLS_CERT_FILE` / `TLS_KEY_FILE` | *(unset)* | Set both to serve HTTPS. |
 | `TLS_CLIENT_CA_FILE` | *(unset)* | With TLS enabled, require and verify client certificates against this CA (mTLS). |
+| `TLS_REQUIRED` | `false` | Refuse to start unless TLS is configured — a guard against accidentally running plaintext in production. Doesn't enable TLS itself. |
 
 See [`.env.example`](.env.example) for the annotated source of truth. The
 host-facing RPCs are open at the application layer; guard them with optional
