@@ -40,7 +40,9 @@ export default function Keys() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<Key | undefined>();
   const [newToken, setNewToken] = useState<Key | null>(null); // shows plaintext once
+  const [tokenAction, setTokenAction] = useState<"created" | "rotated">("created");
   const [confirmDelete, setConfirmDelete] = useState<Key | null>(null);
+  const [confirmRotate, setConfirmRotate] = useState<Key | null>(null);
 
   const load = useCallback(async () => {
     setError("");
@@ -61,7 +63,10 @@ export default function Keys() {
   const onSaved = (key: Key) => {
     setEditorOpen(false);
     // A freshly created key carries its plaintext token exactly once.
-    if (key.plaintextToken) setNewToken(key);
+    if (key.plaintextToken) {
+      setTokenAction("created");
+      setNewToken(key);
+    }
     setEditing(undefined);
     void load();
   };
@@ -69,6 +74,17 @@ export default function Keys() {
   const doDelete = async (key: Key) => {
     try {
       await API.deleteKey(key.id);
+      void load();
+    } catch (e) {
+      setError(e instanceof APIError ? e.message : String(e));
+    }
+  };
+
+  const doRotate = async (key: Key) => {
+    try {
+      const rotated = await API.rotateKey(key.id); // new plaintext token, shown once
+      setTokenAction("rotated");
+      setNewToken(rotated);
       void load();
     } catch (e) {
       setError(e instanceof APIError ? e.message : String(e));
@@ -114,6 +130,7 @@ export default function Keys() {
                 setEditing(k);
                 setEditorOpen(true);
               }}
+              onRotate={() => setConfirmRotate(k)}
               onDelete={() => setConfirmDelete(k)}
             />
           ))
@@ -142,7 +159,7 @@ export default function Keys() {
           />
         )}
 
-        <TokenRevealModal keyWithToken={newToken} onClose={() => setNewToken(null)} />
+        <TokenRevealModal keyWithToken={newToken} action={tokenAction} onClose={() => setNewToken(null)} />
 
         <IonAlert
           isOpen={!!confirmDelete}
@@ -160,12 +177,38 @@ export default function Keys() {
           ]}
           onDidDismiss={() => setConfirmDelete(null)}
         />
+
+        <IonAlert
+          isOpen={!!confirmRotate}
+          header="Rotate key?"
+          message={`Issue a new token for "${confirmRotate?.name}"? Its id, policy, and rate limits stay the same, but the current token stops working immediately — update any client using it.`}
+          buttons={[
+            { text: "Cancel", role: "cancel" },
+            {
+              text: "Rotate",
+              handler: () => {
+                if (confirmRotate) void doRotate(confirmRotate);
+              },
+            },
+          ]}
+          onDidDismiss={() => setConfirmRotate(null)}
+        />
       </IonContent>
     </IonPage>
   );
 }
 
-function KeyCard({ k, onEdit, onDelete }: { k: Key; onEdit: () => void; onDelete: () => void }) {
+function KeyCard({
+  k,
+  onEdit,
+  onRotate,
+  onDelete,
+}: {
+  k: Key;
+  onEdit: () => void;
+  onRotate: () => void;
+  onDelete: () => void;
+}) {
   return (
     <IonCard>
       <IonCardHeader>
@@ -208,6 +251,9 @@ function KeyCard({ k, onEdit, onDelete }: { k: Key; onEdit: () => void; onDelete
           <IonButton fill="outline" size="small" onClick={onEdit}>
             Edit
           </IonButton>
+          <IonButton fill="outline" size="small" onClick={onRotate}>
+            Rotate
+          </IonButton>
           <IonButton fill="outline" size="small" color="danger" onClick={onDelete}>
             Delete
           </IonButton>
@@ -217,12 +263,15 @@ function KeyCard({ k, onEdit, onDelete }: { k: Key; onEdit: () => void; onDelete
   );
 }
 
-// TokenRevealModal shows a freshly-created key's plaintext token exactly once.
+// TokenRevealModal shows a key's plaintext token exactly once — after a create
+// or a rotate (both return the new token on the wire just this once).
 function TokenRevealModal({
   keyWithToken,
+  action,
   onClose,
 }: {
   keyWithToken: Key | null;
+  action: "created" | "rotated";
   onClose: () => void;
 }) {
   const copy = () => {
@@ -231,7 +280,7 @@ function TokenRevealModal({
   return (
     <IonModal isOpen={!!keyWithToken} onDidDismiss={onClose}>
       <IonContent className="ion-padding">
-        <h2>Key created</h2>
+        <h2>{action === "rotated" ? "Key rotated" : "Key created"}</h2>
         <IonText color="warning">
           <p>
             Copy this token now — it is shown only once and cannot be recovered. Only its hash is
