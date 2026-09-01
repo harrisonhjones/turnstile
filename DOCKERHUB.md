@@ -25,9 +25,17 @@ API and the console at `http://localhost:8080/ui/`.
 
 Notes:
 
-- Use a **named volume** (as above). A bind mount takes host ownership; the
-  non-root process (uid `65532`) can't write it unless you pre-create the host
-  directory owned by `65532`.
+- Prefer a **named volume** (as above) — Docker initializes its ownership to
+  match the image's non-root user, so it just works.
+- **Bind mount** (mapping a host directory to `/data`): the host directory keeps
+  its own ownership, so give it to the image's non-root user (uid `65532`) or
+  the process can't create the database:
+  ```sh
+  chown -R 65532:65532 /path/on/host
+  ```
+  Don't try to fix this by overriding the container user (`--user`) to match the
+  host: the image's working directory is owned by `65532`, so a different uid
+  fails to start (`open .env: permission denied`). Chown the host dir instead.
 - Under **mutual TLS**, the built-in healthcheck can't present a client cert, so
   the container reports unhealthy — run with `--no-healthcheck` in that case.
 
