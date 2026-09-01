@@ -96,11 +96,11 @@ func (h *Handler) ListKeys(ctx context.Context, req *connect.Request[turnstilev1
 
 // GetKey returns a single key by id.
 func (h *Handler) GetKey(ctx context.Context, req *connect.Request[turnstilev1.GetKeyRequest]) (*connect.Response[turnstilev1.Key], error) {
-	if req.Msg.Id == "" {
-		return nil, invalidArg("id is required")
-	}
 	if _, err := h.requireManage(ctx, req.Header(), "turnstile:get-key", req.Msg.Id); err != nil {
 		return nil, err
+	}
+	if req.Msg.Id == "" {
+		return nil, invalidArg("id is required")
 	}
 	k, err := h.store.GetAPIKeyByID(ctx, req.Msg.Id)
 	if err != nil {
@@ -114,12 +114,12 @@ func (h *Handler) GetKey(ctx context.Context, req *connect.Request[turnstilev1.G
 // removed via clear_expiry.
 func (h *Handler) UpdateKey(ctx context.Context, req *connect.Request[turnstilev1.UpdateKeyRequest]) (*connect.Response[turnstilev1.Key], error) {
 	r := req.Msg
-	if r.Id == "" {
-		return nil, invalidArg("id is required")
-	}
 	caller, err := h.requireManage(ctx, req.Header(), "turnstile:update-key", r.Id)
 	if err != nil {
 		return nil, err
+	}
+	if r.Id == "" {
+		return nil, invalidArg("id is required")
 	}
 	if r.ClearExpiry && r.ExpiresAt != nil {
 		return nil, invalidArg("expires_at and clear_expiry are mutually exclusive")
@@ -185,12 +185,12 @@ func (h *Handler) UpdateKey(ctx context.Context, req *connect.Request[turnstilev
 // and name. The new plaintext token is returned exactly once; the old token
 // stops authenticating immediately.
 func (h *Handler) RotateKey(ctx context.Context, req *connect.Request[turnstilev1.RotateKeyRequest]) (*connect.Response[turnstilev1.Key], error) {
-	if req.Msg.Id == "" {
-		return nil, invalidArg("id is required")
-	}
 	caller, err := h.requireManage(ctx, req.Header(), "turnstile:rotate-key", req.Msg.Id)
 	if err != nil {
 		return nil, err
+	}
+	if req.Msg.Id == "" {
+		return nil, invalidArg("id is required")
 	}
 	plaintext, hash, err := token.Generate(token.APIKeyPrefix)
 	if err != nil {
@@ -208,12 +208,12 @@ func (h *Handler) RotateKey(ctx context.Context, req *connect.Request[turnstilev
 
 // DeleteKey removes a key and drops its cached rate limiters.
 func (h *Handler) DeleteKey(ctx context.Context, req *connect.Request[turnstilev1.DeleteKeyRequest]) (*connect.Response[emptypb.Empty], error) {
-	if req.Msg.Id == "" {
-		return nil, invalidArg("id is required")
-	}
 	caller, err := h.requireManage(ctx, req.Header(), "turnstile:delete-key", req.Msg.Id)
 	if err != nil {
 		return nil, err
+	}
+	if req.Msg.Id == "" {
+		return nil, invalidArg("id is required")
 	}
 	if err := h.store.DeleteAPIKey(ctx, req.Msg.Id); err != nil {
 		return nil, storeErr(err)

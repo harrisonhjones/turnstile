@@ -243,10 +243,12 @@ or loosen specific actions via its own `rateLimits` map (`CreateKey`/`UpdateKey`
 Turnstile records the audit trail itself; there is no host-reported intake. It
 has two sources:
 
-- **`Check` decisions.** The `Check` hot path writes one row per decision —
-  `ALLOWED`, `POLICY_DENIED`, `RATE_LIMITED`, or `UNAUTHENTICATED` — recorded
-  asynchronously off the hot path. An unauthenticated `Check` has an empty
-  `api_key_id`.
+- **`Check` decisions.** The `Check` hot path writes one row per **authenticated**
+  decision — `ALLOWED`, `POLICY_DENIED`, or `RATE_LIMITED` — recorded
+  asynchronously off the hot path. `UNAUTHENTICATED` Checks are **not** audited
+  (they carry no key, and auditing an open endpoint's rejects would let it be
+  flooded); their volume is visible in the `turnstile_check_decisions_total`
+  metric instead.
 - **Management-plane self-audit.** Turnstile records its own management actions
   directly: every **mutation** on success (`create`/`update`/`rotate`/`delete`-key
   and `update-policy`) and every **denied** attempt (an authenticated key that

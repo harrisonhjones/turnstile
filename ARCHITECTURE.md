@@ -37,8 +37,9 @@ why management is usable without a gRPC client.
 ```
 
 - **`Check`** (hot path) runs authn → authz → rate limiting and returns a
-  verdict, recording one audit row per decision (ALLOWED / POLICY_DENIED /
-  RATE_LIMITED / UNAUTHENTICATED) asynchronously off the hot path.
+  verdict, recording one audit row per authenticated decision (ALLOWED /
+  POLICY_DENIED / RATE_LIMITED) asynchronously off the hot path. Unauthenticated
+  Checks are not audited (no key; volume is in metrics).
 - **`Authenticate`** resolves a token to a `Principal` (whoami), nothing more.
 - **Management RPCs** (`CreateKey`, …, `UpdatePolicy`, `QueryAudit`) require the
   caller's own key to allow the matching `turnstile:<op>` action, and back the

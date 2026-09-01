@@ -13,7 +13,8 @@ option go_package = "harrisonhjones.com/turnstile/gen/turnstile/v1;turnstilev1";
 // (e.g. "photos:listAlbums", "photos:album:a1b2"); Turnstile never parses them.
 service Turnstile {
   // Check does authn + authz + rate limiting in one round-trip (the hot path)
-  // and records one audit entry per decision (see the audit_log).
+  // and records an audit entry for each authenticated decision (see the
+  // audit_log); unauthenticated Checks are not audited.
   rpc Check(CheckRequest) returns (CheckResponse);
 
   // Authenticate resolves a client token to its Principal (identity only), for
@@ -239,10 +240,11 @@ message AuthenticateRequest {
 // ---- Audit ----
 
 // AuditEntry is one recorded decision. Turnstile records these itself — `Check`
-// writes one per decision, and the management RPCs self-audit mutations and
-// denied attempts — so there is no host-reported audit intake.
+// writes one per authenticated decision (unauthenticated Checks are not audited),
+// and the management RPCs self-audit mutations and denied attempts — so there is
+// no host-reported audit intake.
 message AuditEntry {
-  string api_key_id = 1; // the acting key's id; empty for an unauthenticated Check
+  string api_key_id = 1; // the acting key's id (always set — unauthenticated Checks are not audited)
   string action = 2; // namespaced action evaluated (host "svc:*" or "turnstile:*")
   string resource = 3; // the target resource
   Decision decision = 4; // the outcome (ALLOWED / POLICY_DENIED / RATE_LIMITED / UNAUTHENTICATED)

@@ -10,8 +10,9 @@ A host replaces its in-process authorization with two interactions:
 1. **On each request** — call `Check(token, "svc:action", resource, count_rate_limit=true)`.
 2. **For a whoami** — call `Authenticate(token)`.
 
-There is no audit call to make: Turnstile records one audit row per `Check`
-decision itself, server-side. The host keeps its own **action/resource
+There is no audit call to make: Turnstile records an audit row for each
+authenticated `Check` decision itself, server-side (unauthenticated Checks
+aren't audited — they carry no key). The host keeps its own **action/resource
 vocabulary**; Turnstile only ever sees opaque strings.
 
 ## Namespacing

@@ -61,7 +61,8 @@ const (
 // TurnstileClient is a client for the turnstile.v1.Turnstile service.
 type TurnstileClient interface {
 	// Check does authn + authz + rate limiting in one round-trip (the hot path)
-	// and records one audit entry per decision (see the audit_log).
+	// and records an audit entry for each authenticated decision (see the
+	// audit_log); unauthenticated Checks are not audited.
 	Check(context.Context, *connect.Request[v1.CheckRequest]) (*connect.Response[v1.CheckResponse], error)
 	// Authenticate resolves a client token to its Principal (identity only), for
 	// a "whoami"-style lookup. No authorization or rate limiting is performed.
@@ -236,7 +237,8 @@ func (c *turnstileClient) QueryAudit(ctx context.Context, req *connect.Request[v
 // TurnstileHandler is an implementation of the turnstile.v1.Turnstile service.
 type TurnstileHandler interface {
 	// Check does authn + authz + rate limiting in one round-trip (the hot path)
-	// and records one audit entry per decision (see the audit_log).
+	// and records an audit entry for each authenticated decision (see the
+	// audit_log); unauthenticated Checks are not audited.
 	Check(context.Context, *connect.Request[v1.CheckRequest]) (*connect.Response[v1.CheckResponse], error)
 	// Authenticate resolves a client token to its Principal (identity only), for
 	// a "whoami"-style lookup. No authorization or rate limiting is performed.

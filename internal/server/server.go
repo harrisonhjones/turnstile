@@ -151,10 +151,13 @@ func (h *Handler) Check(ctx context.Context, req *connect.Request[turnstilev1.Ch
 	if err != nil {
 		if isAuthnFailure(err) {
 			// Generic unauthenticated result — never distinguish unknown vs
-			// disabled vs expired (no token-existence leak).
+			// disabled vs expired (no token-existence leak). Deliberately NOT
+			// audited: an unauthenticated call has no key to attribute the row to,
+			// and auditing it before rate limiting would let an open endpoint be
+			// flooded into unbounded audit_log growth. The aggregate volume is
+			// still captured by the turnstile_check_decisions_total metric.
 			slog.Debug("check: rejected token", "reason", err)
 			metrics.RecordCheck("unauthenticated")
-			h.recordCheckAudit("", r.Action, r.Resource, turnstilev1.Decision_UNAUTHENTICATED)
 			return connect.NewResponse(&turnstilev1.CheckResponse{
 				Allowed:  false,
 				Decision: turnstilev1.Decision_UNAUTHENTICATED,
@@ -205,9 +208,9 @@ func (h *Handler) Check(ctx context.Context, req *connect.Request[turnstilev1.Ch
 	}), nil
 }
 
-// recordCheckAudit writes one audit row for a Check decision (best-effort;
-// drop-on-full, never blocks the hot path). keyID is empty for an
-// unauthenticated Check.
+// recordCheckAudit writes one audit row for an authenticated Check decision
+// (best-effort; drop-on-full, never blocks the hot path). It is not called for
+// unauthenticated Checks, so keyID is always a real key id.
 func (h *Handler) recordCheckAudit(keyID, action, resource string, d turnstilev1.Decision) {
 	h.auditWriter.Write(&store.AuditEntry{
 		APIKeyID:  keyID,

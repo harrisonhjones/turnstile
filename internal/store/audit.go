@@ -14,8 +14,9 @@ func escapeLike(s string) string {
 	return r.Replace(s)
 }
 
-// AuditEntry is one recorded decision. APIKeyID is empty for an unauthenticated
-// Check; Decision is the outcome name (e.g. "ALLOWED", "POLICY_DENIED").
+// AuditEntry is one recorded decision. APIKeyID is the acting key (always set —
+// unauthenticated Checks are not audited); Decision is the outcome name (e.g.
+// "ALLOWED", "POLICY_DENIED").
 type AuditEntry struct {
 	ID        int64
 	Timestamp time.Time

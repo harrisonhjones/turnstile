@@ -155,9 +155,10 @@ func TestServiceEndToEnd(t *testing.T) {
 	}
 
 	// --- QueryAudit reads back the Check auto-audit ---
-	// The three Checks above (allowed, policy-denied, unauthenticated) each wrote
-	// one svc: audit row; the CreateKey above wrote one turnstile: row → 4 total.
-	waitForAudit(t, env, 4)
+	// The allowed and policy-denied Checks each wrote one svc: audit row; the
+	// unauthenticated Check is NOT audited (no key to attribute); the CreateKey
+	// above wrote one turnstile: row → 3 total, 2 of them svc:.
+	waitForAudit(t, env, 3)
 
 	qReq := connect.NewRequest(&turnstilev1.QueryAuditRequest{ActionPrefix: "svc:", Limit: 10})
 	withAdmin(env, qReq)
@@ -165,8 +166,8 @@ func TestServiceEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("QueryAudit: %v", err)
 	}
-	if len(q.Msg.Entries) != 3 {
-		t.Errorf("expected 3 svc: audit entries (the Checks), got %d", len(q.Msg.Entries))
+	if len(q.Msg.Entries) != 2 {
+		t.Errorf("expected 2 svc: audit entries (allowed + denied; unauth not audited), got %d", len(q.Msg.Entries))
 	}
 }
 
@@ -626,24 +627,28 @@ func TestCheckWritesAudit(t *testing.T) {
 	env.client.Check(ctx, connect.NewRequest(&turnstilev1.CheckRequest{ClientToken: key.PlaintextToken, Action: "svc:write", Resource: "svc:x"}))
 	env.client.Check(ctx, connect.NewRequest(&turnstilev1.CheckRequest{ClientToken: "tsk_nope", Action: "svc:read", Resource: "svc:x"}))
 
-	// 1 CreateKey (management) + 3 Check rows = 4 total.
-	waitForAudit(t, env, 4)
+	// The allowed and policy-denied Checks are audited; the unauthenticated one is
+	// not (no key to attribute). 1 CreateKey (management) + 2 Check rows = 3 total.
+	waitForAudit(t, env, 3)
 
 	got, _, err := env.store.ListAuditEntries(ctx, store.AuditFilter{ActionPrefix: "svc:", Limit: 100})
 	if err != nil {
 		t.Fatalf("list audit: %v", err)
 	}
-	if len(got) != 3 {
-		t.Errorf("expected 3 svc: Check audit rows, got %d", len(got))
+	if len(got) != 2 {
+		t.Errorf("expected 2 svc: Check audit rows (allowed + denied), got %d", len(got))
 	}
 	seen := map[string]bool{}
 	for _, e := range got {
 		seen[e.Decision] = true
 	}
-	for _, want := range []string{"ALLOWED", "POLICY_DENIED", "UNAUTHENTICATED"} {
+	for _, want := range []string{"ALLOWED", "POLICY_DENIED"} {
 		if !seen[want] {
 			t.Errorf("expected a Check audit row with decision %s; got %v", want, seen)
 		}
+	}
+	if seen["UNAUTHENTICATED"] {
+		t.Error("unauthenticated Checks must not be audited")
 	}
 }
 

@@ -1439,11 +1439,12 @@ func (x *AuthenticateRequest) GetClientToken() string {
 }
 
 // AuditEntry is one recorded decision. Turnstile records these itself — `Check`
-// writes one per decision, and the management RPCs self-audit mutations and
-// denied attempts — so there is no host-reported audit intake.
+// writes one per authenticated decision (unauthenticated Checks are not audited),
+// and the management RPCs self-audit mutations and denied attempts — so there is
+// no host-reported audit intake.
 type AuditEntry struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ApiKeyId      string                 `protobuf:"bytes,1,opt,name=api_key_id,json=apiKeyId,proto3" json:"api_key_id,omitempty"`           // the acting key's id; empty for an unauthenticated Check
+	ApiKeyId      string                 `protobuf:"bytes,1,opt,name=api_key_id,json=apiKeyId,proto3" json:"api_key_id,omitempty"`           // the acting key's id (always set — unauthenticated Checks are not audited)
 	Action        string                 `protobuf:"bytes,2,opt,name=action,proto3" json:"action,omitempty"`                                 // namespaced action evaluated (host "svc:*" or "turnstile:*")
 	Resource      string                 `protobuf:"bytes,3,opt,name=resource,proto3" json:"resource,omitempty"`                             // the target resource
 	Decision      Decision               `protobuf:"varint,4,opt,name=decision,proto3,enum=turnstile.v1.Decision" json:"decision,omitempty"` // the outcome (ALLOWED / POLICY_DENIED / RATE_LIMITED / UNAUTHENTICATED)
