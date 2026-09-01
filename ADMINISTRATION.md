@@ -335,8 +335,17 @@ rely on network isolation (e.g. a private subnet) in that case.
 Set `TLS_REQUIRED=true` to make Turnstile **refuse to start** unless TLS is
 configured (`TLS_CERT_FILE` + `TLS_KEY_FILE`). It's a boot-time guard so a
 production deployment can't silently come up in plaintext; it does not enable TLS
-by itself. Pair it with `TLS_CLIENT_CA_FILE` to require full mTLS. Startup fails
-fast with a clear error if the flag is set but no server cert/key is present.
+by itself. Startup fails fast with a clear error if the flag is set but no server
+cert/key is present.
+
+`TLS_REQUIRED` only guarantees the connection is **encrypted** — an operator can
+satisfy it with a server cert alone and still leave the host-facing RPCs reachable
+by anyone who can connect (they are open at the application layer). To require
+**client-certificate authentication** — the actual who-can-connect gate — set
+`MTLS_REQUIRED=true`, which makes startup fail unless full mTLS is configured
+(`TLS_CERT_FILE` + `TLS_KEY_FILE` + `TLS_CLIENT_CA_FILE`). Because mTLS implies
+server TLS, `MTLS_REQUIRED` subsumes `TLS_REQUIRED`; set it when the threat model
+needs every caller to present a trusted client cert.
 
 ## The web console
 

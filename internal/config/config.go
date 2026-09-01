@@ -38,6 +38,15 @@ type Config struct {
 	// plaintext. It does not itself enable TLS; set the cert/key for that.
 	TLSRequired bool
 
+	// MTLSRequired, when true (MTLS_REQUIRED), makes startup fail unless mutual
+	// TLS is configured (server cert/key plus a client CA). It is the stronger
+	// guard: whereas TLS_REQUIRED only guarantees the connection is encrypted,
+	// MTLS_REQUIRED guarantees client certificates are required and verified —
+	// the actual who-can-connect gate for the app-layer-open host RPCs. Because
+	// mTLS implies server TLS, MTLS_REQUIRED subsumes TLS_REQUIRED. It does not
+	// itself enable mTLS; set the cert/key and client CA for that.
+	MTLSRequired bool
+
 	// MetricsEnabled exposes Prometheus metrics at /metrics (unauthenticated,
 	// like /health). Defaults to true; set METRICS_ENABLED=false to turn off.
 	MetricsEnabled bool
@@ -60,6 +69,7 @@ func Load() (*Config, error) {
 		TLSKeyFile:      os.Getenv("TLS_KEY_FILE"),
 		TLSClientCAFile: os.Getenv("TLS_CLIENT_CA_FILE"),
 		TLSRequired:     boolEnvOrDefault("TLS_REQUIRED", false),
+		MTLSRequired:    boolEnvOrDefault("MTLS_REQUIRED", false),
 		MetricsEnabled:  boolEnvOrDefault("METRICS_ENABLED", true),
 	}
 
@@ -75,8 +85,15 @@ func Load() (*Config, error) {
 	if cfg.TLSClientCAFile != "" && cfg.TLSCertFile == "" {
 		return nil, fmt.Errorf("TLS_CLIENT_CA_FILE requires TLS_CERT_FILE and TLS_KEY_FILE (mTLS needs a server cert)")
 	}
-	if cfg.TLSRequired && !cfg.TLSEnabled() {
+	// MTLS_REQUIRED subsumes TLS_REQUIRED (MutualTLS implies TLSEnabled), so when
+	// both are set we skip the weaker check and report only the strongest unmet
+	// requirement — otherwise an operator fixes the TLS_REQUIRED error, restarts,
+	// and only then discovers the mTLS one.
+	if cfg.TLSRequired && !cfg.MTLSRequired && !cfg.TLSEnabled() {
 		return nil, fmt.Errorf("TLS_REQUIRED is set but TLS is not configured — set TLS_CERT_FILE and TLS_KEY_FILE")
+	}
+	if cfg.MTLSRequired && !cfg.MutualTLS() {
+		return nil, fmt.Errorf("MTLS_REQUIRED is set but mutual TLS is not configured — set TLS_CERT_FILE, TLS_KEY_FILE, and TLS_CLIENT_CA_FILE")
 	}
 
 	return cfg, nil

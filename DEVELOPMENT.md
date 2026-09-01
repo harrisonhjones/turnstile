@@ -70,6 +70,7 @@ sane default.
 | `TLS_CERT_FILE` / `TLS_KEY_FILE` | *(unset)* | Set both to serve HTTPS. |
 | `TLS_CLIENT_CA_FILE` | *(unset)* | With TLS enabled, require and verify client certificates against this CA (mTLS). |
 | `TLS_REQUIRED` | `false` | Refuse to start unless TLS is configured — a guard against accidentally running plaintext in production. Doesn't enable TLS itself. |
+| `MTLS_REQUIRED` | `false` | Refuse to start unless mutual TLS is configured (cert/key + `TLS_CLIENT_CA_FILE`). Stronger than `TLS_REQUIRED`, which it subsumes: it enforces client-certificate auth, not just encryption. Doesn't enable mTLS itself. |
 
 See [`.env.example`](.env.example) for the annotated source of truth. The
 host-facing RPCs are open at the application layer; guard them with optional
